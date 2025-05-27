@@ -1,0 +1,27 @@
+
+functions:
+  oscar:
+  - grnet:
+      name: grayify-cwl2oscar
+      memory: 1Gi
+      cpu: '1.0'
+      image: ghcr.io/grycap/imagemagick
+      script: script-gray.sh
+      input:
+      - storage_provider: minio
+        path: grayplants-cwl2oscar/in
+      output:
+      - storage_provider: minio
+        path: grayplants-cwl2oscar/med
+  - grnet:
+      name: plants-classification-cwl2oscar
+      memory: 2Gi
+      cpu: '1.0'
+      image: ai4oshub/plants-classification
+      script: script-class.sh
+      input:
+      - storage_provider: minio.default
+        path: grayplants-cwl2oscar/med
+      output:
+      - storage_provider: minio.default
+        path: grayplants-cwl2oscar/out
