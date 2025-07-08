@@ -1,0 +1,20 @@
+functions:
+  oscar:
+  - grnet:
+      name: copy-input-mounted-vol
+      memory: 1Gi
+      cpu: '1.0'
+      image: opensourcefoundries/minideb:jessie
+      script: script.sh
+      environment:
+        variables:
+          MOUNT_PATH: "/mnt/copy-input-mounted-vol/mount"
+      input:
+      - storage_provider: minio.default
+        path: copy-input-mounted-vol/in
+      output:
+      - storage_provider: minio.default
+        path: copy-input-mounted-vol/out
+      mount:
+        storage_provider: minio.default
+        path: copy-input-mounted-vol/mount
