@@ -17,4 +17,4 @@ functions:
         path: run-script-event/out
       mount:
         storage_provider: minio.default
-        path: run-script-event/mount
+        path: /run-script-event/mount
