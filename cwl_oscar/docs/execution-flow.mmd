@@ -1,0 +1,72 @@
+flowchart TD
+    A[User] -->|"./cwl-oscar --oscar-endpoint ... hello.cwl input.json"| B[cwl-oscar CLI]
+    
+    B --> C[cwl_oscar.main.main]
+    C --> D[Argument Parser]
+    D --> E[LoadingContext & RuntimeContext Setup]
+    
+    E --> F[cwltool.main.main]
+    F --> G[CWL Workflow Parser]
+    G --> H[make_oscar_tool Factory]
+    
+    H --> I[OSCARCommandLineTool]
+    I --> J[make_job_runner]
+    J --> K[OSCARTask Creation]
+    
+    K --> L[OSCARTask.run]
+    L --> M[Command Line Building]
+    M --> N[Environment Setup]
+    N --> O[OSCARExecutor]
+    
+    O --> P[OSCAR Python Client]
+    P -->|"HTTP Request with Script"| Q[OSCAR Cluster Service]
+    Q -->|"run-script-event2"| R[OSCAR Container Execution]
+    
+    R -->|"Command: echo Hello from cwl-oscar!"| S[Container Output]
+    S -->|"HTTP Response"| P
+    P -->|"Success/Failure"| O
+    
+    O --> T[Output Collection]
+    T --> U[Create Local Output Files]
+    U --> V[cwltool Output Processing]
+    
+    V --> W[Final JSON Output]
+    W --> X[User Receives Results]
+    
+    subgraph "Local Development System"
+        A
+        B
+        C
+        D
+        E
+        F
+        G
+        H
+        I
+        J
+        K
+        L
+        M
+        N
+        O
+        P
+        T
+        U
+        V
+        W
+        X
+    end
+    
+    subgraph "OSCAR Cluster Remote"
+        Q
+        R
+        S
+    end
+    
+    style A fill:#e1f5fe
+    style Q fill:#fff3e0
+    style R fill:#fff3e0
+    style S fill:#fff3e0
+    style X fill:#e8f5e8
+    style O fill:#f3e5f5
+    style I fill:#f3e5f5 

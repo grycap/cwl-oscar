@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Test script for cwl-oscar implementation."""
+
+import os
+import tempfile
+import json
+import sys
+import subprocess
+
+# Test configuration
+TEST_OSCAR_ENDPOINT = ""
+TEST_OSCAR_TOKEN = ""
+TEST_SERVICE_NAME = ""
+
+def test_oscar_client():
+    """Test OSCAR client connectivity."""
+    print("Testing OSCAR client connectivity...")
+    
+    try:
+        from oscar_python.client import Client
+        
+        options = {
+            'cluster_id': 'test-cluster',
+            'endpoint': TEST_OSCAR_ENDPOINT,
+            'oidc_token': TEST_OSCAR_TOKEN,
+            'ssl': 'True'
+        }
+        
+        client = Client(options=options)
+        
+        # Test cluster info
+        print("Getting cluster info...")
+        info = client.get_cluster_info()
+        print(f"Cluster info status: {info.status_code}")
+        
+        # Test service list
+        print("Getting service list...")
+        services = client.list_services()
+        print(f"Services list status: {services.status_code}")
+        
+        if services.status_code == 200:
+            services_data = services.json()
+            print(f"Found {len(services_data)} services")
+            
+            # Check if our test service exists
+            service_names = [s['name'] for s in services_data]
+            if TEST_SERVICE_NAME in service_names:
+                print(f"✓ Test service '{TEST_SERVICE_NAME}' found")
+            else:
+                print(f"✗ Test service '{TEST_SERVICE_NAME}' not found")
+                print(f"Available services: {service_names}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"✗ OSCAR client test failed: {e}")
+        return False
+
+def test_cwl_oscar_basic():
+    """Test basic cwl-oscar functionality."""
+    print("\nTesting basic cwl-oscar functionality...")
+    
+    # Test version
+    print("Testing version...")
+    try:
+        result = subprocess.run([
+            "python", "../../cwl-oscar", "--version"
+        ], capture_output=True, text=True, cwd="example")
+        
+        if result.returncode == 0:
+            print(f"✓ Version: {result.stdout.strip()}")
+        else:
+            print(f"✗ Version failed: {result.stderr}")
+            
+    except Exception as e:
+        print(f"✗ Version test failed: {e}")
+        
+    # Test help
+    print("Testing help...")
+    try:
+        result = subprocess.run([
+            "python", "../../cwl-oscar", "--help"
+        ], capture_output=True, text=True, cwd="example")
+        
+        if result.returncode == 0:
+            print("✓ Help command works")
+        else:
+            print(f"✗ Help failed: {result.stderr}")
+            
+    except Exception as e:
+        print(f"✗ Help test failed: {e}")
+
+def test_cwl_oscar_execution():
+    """Test CWL workflow execution with OSCAR."""
+    print("\nTesting CWL workflow execution...")
+    
+    try:
+        # Test with dry run first (if available)
+        print("Testing workflow execution...")
+        result = subprocess.run([
+            "python", "../../cwl-oscar",
+            "--oscar-endpoint", TEST_OSCAR_ENDPOINT,
+            "--oscar-token", TEST_OSCAR_TOKEN,
+            "--service-name", TEST_SERVICE_NAME,
+            "--debug",
+            "hello.cwl", "input.json"
+        ], capture_output=True, text=True, cwd="example", timeout=300)
+        
+        print(f"Return code: {result.returncode}")
+        print(f"Stdout: {result.stdout}")
+        print(f"Stderr: {result.stderr}")
+        
+        if result.returncode == 0:
+            print("✓ CWL workflow execution completed successfully")
+            
+            # Check for output file
+            if os.path.exists("example/hello.txt"):
+                with open("example/hello.txt", "r") as f:
+                    content = f.read()
+                print(f"✓ Output file created: {content.strip()}")
+            else:
+                print("✗ Output file not found")
+                
+        else:
+            print(f"✗ CWL workflow execution failed with code {result.returncode}")
+            
+    except subprocess.TimeoutExpired:
+        print("✗ CWL workflow execution timed out")
+    except Exception as e:
+        print(f"✗ CWL workflow execution failed: {e}")
+
+def test_oscar_service_direct():
+    """Test OSCAR service execution directly."""
+    print("\nTesting OSCAR service execution directly...")
+    
+    try:
+        from oscar_python.client import Client
+        
+        options = {
+            'cluster_id': 'test-cluster',
+            'endpoint': TEST_OSCAR_ENDPOINT,
+            'oidc_token': TEST_OSCAR_TOKEN,
+            'ssl': 'True'
+        }
+        
+        client = Client(options=options)
+        
+        # Create a simple test script
+        test_script = '''#!/bin/bash
+echo "Hello from OSCAR service!"
+echo "Current directory: $(pwd)"
+echo "Mount path: $MOUNT_PATH"
+echo "Test execution completed"
+'''
+        
+        test_input = {
+            "script": test_script,
+            "job_name": "test-job",
+            "command": "echo Hello from OSCAR"
+        }
+        
+        print(f"Submitting job to service: {TEST_SERVICE_NAME}")
+        response = client.run_service(
+            TEST_SERVICE_NAME,
+            input=json.dumps(test_input),
+            async_call=False
+        )
+        
+        print(f"Response status: {response.status_code}")
+        print(f"Response content: {response.text}")
+        
+        if response.status_code == 200:
+            print("✓ OSCAR service execution successful")
+        else:
+            print(f"✗ OSCAR service execution failed")
+            
+    except Exception as e:
+        print(f"✗ OSCAR service direct test failed: {e}")
+
+def main():
+    """Run all tests."""
+    print("CWL-OSCAR Test Suite")
+    print("=" * 50)
+    
+    # Test 1: OSCAR client connectivity
+    if not test_oscar_client():
+        print("Skipping further tests due to OSCAR client failure")
+        return 1
+    
+    # Test 2: Basic cwl-oscar functionality
+    test_cwl_oscar_basic()
+    
+    # Test 3: Direct OSCAR service test
+    test_oscar_service_direct()
+    
+    # Test 4: Full CWL workflow execution
+    # test_cwl_oscar_execution()  # Commented out for now as it requires the service to be properly set up
+    
+    print("\n" + "=" * 50)
+    print("Test suite completed!")
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main()) 

@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+"""
+cwl-oscar entrypoint script
+"""
+import sys
+
+import cwl_oscar.main
+
+if __name__ == "__main__":
+    sys.exit(
+        cwl_oscar.main.main(sys.argv[1:])
+    ) 

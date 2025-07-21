@@ -1,0 +1,59 @@
+graph TB
+    subgraph "User Interface Layer"
+        CLI[cwl-oscar CLI]
+        ARGS[Command Line Args<br/>--oscar-endpoint<br/>--oscar-token<br/>--service-name<br/>--mount-path]
+    end
+    
+    subgraph "CWL Integration Layer"
+        MAIN[cwl_oscar.main]
+        CWTOOL[cwltool.main]
+        PARSER[CWL Parser]
+        FACTORY[make_oscar_tool]
+    end
+    
+    subgraph "OSCAR Backend Components"
+        TOOL[OSCARCommandLineTool<br/>- Workflow parsing<br/>- Job creation]
+        TASK[OSCARTask<br/>- Job execution<br/>- Output collection]
+        EXEC[OSCARExecutor<br/>- Command scripting<br/>- OSCAR communication]
+        MAPPER[OSCARPathMapper<br/>- Path management<br/>- Mount mapping]
+    end
+    
+    subgraph "OSCAR Service Layer"
+        CLIENT[OSCAR Python Client<br/>- HTTP requests<br/>- Authentication]
+        CLUSTER[OSCAR Cluster<br/>oscar.test.fedcloud.eu]
+        SERVICE[run-script-event2<br/>- Script execution<br/>- File handling]
+    end
+    
+    subgraph "Data Flow"
+        INPUT[Input Files<br/>hello.cwl<br/>input.json]
+        SCRIPT[Generated Script<br/>#!/bin/bash<br/>echo Hello from cwl-oscar]
+        OUTPUT[Output Files<br/>hello.txt<br/>JSON metadata]
+    end
+    
+    CLI --> ARGS
+    ARGS --> MAIN
+    MAIN --> CWTOOL
+    CWTOOL --> PARSER
+    PARSER --> FACTORY
+    FACTORY --> TOOL
+    
+    TOOL --> TASK
+    TASK --> EXEC
+    TASK --> MAPPER
+    
+    EXEC --> CLIENT
+    CLIENT --> CLUSTER
+    CLUSTER --> SERVICE
+    
+    INPUT --> PARSER
+    EXEC --> SCRIPT
+    SCRIPT --> SERVICE
+    SERVICE --> OUTPUT
+    OUTPUT --> TASK
+    
+    style CLI fill:#e1f5fe
+    style CLUSTER fill:#fff3e0
+    style SERVICE fill:#fff3e0
+    style OUTPUT fill:#e8f5e8
+    style EXEC fill:#f3e5f5
+    style TOOL fill:#f3e5f5 

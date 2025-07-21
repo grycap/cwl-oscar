@@ -1,0 +1,39 @@
+sequenceDiagram
+    participant User
+    participant CLI as cwl-oscar CLI
+    participant Main as cwl_oscar.main
+    participant Tool as OSCARCommandLineTool
+    participant Task as OSCARTask
+    participant Exec as OSCARExecutor
+    participant Client as OSCAR Python Client
+    participant Cluster as OSCAR Cluster
+    participant Service as run-script-event2
+    
+    User->>CLI: ./cwl-oscar --oscar-endpoint ... hello.cwl input.json
+    CLI->>Main: Parse arguments and initialize
+    Main->>Tool: Create OSCAR tool with CWL workflow
+    Tool->>Task: Generate job from workflow
+    
+    Task->>Task: Build command line: ['echo', 'Hello from cwl-oscar!']
+    Task->>Exec: Execute command via OSCAR
+    
+    Exec->>Exec: Create bash script with CWL command
+    Exec->>Client: Submit job with script content
+    Client->>Cluster: HTTP POST /services/run-script-event2/jobs
+    
+    Cluster->>Service: Start container with script
+    Service->>Service: Execute: echo Hello from cwl-oscar!
+    Service->>Cluster: Return execution results
+    
+    Cluster->>Client: HTTP 200 + execution logs
+    Client->>Exec: Success response
+    Exec->>Task: Exit code 0
+    
+    Task->>Task: Create local output file hello.txt
+    Task->>Task: Collect outputs and metadata
+    Task->>Main: Return job results
+    
+    Main->>CLI: Final workflow output
+    CLI->>User: JSON output + hello.txt file
+    
+    Note over User,Service: End-to-end CWL workflow execution via OSCAR 
