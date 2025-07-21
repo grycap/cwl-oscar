@@ -147,6 +147,39 @@ The executor sets the following environment variables for OSCAR jobs:
 
 ## Development
 
+### Setting up Development Environment
+
+1. **Navigate to the project root and activate virtual environment:**
+   ```bash
+   cd /path/to/cwl2oscar
+   
+   # Create virtual environment (if not exists)
+   python -m venv .venv
+   
+   # Activate virtual environment
+   # On Linux/macOS:
+   source .venv/bin/activate
+   
+   # On Windows:
+   .venv\Scripts\activate
+   ```
+
+2. **Install development dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Test the installation:**
+   ```bash
+   python cwl-oscar --version
+   python test_oscar.py  # Run test suite
+   ```
+
+4. **When finished developing:**
+   ```bash
+   deactivate  # Exit virtual environment
+   ```
+
 ### Extending the Executor
 
 To customize the execution behavior, modify the `OSCARExecutor` class:
