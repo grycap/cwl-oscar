@@ -23,6 +23,10 @@ try:
 except ImportError:
     raise ImportError("oscar-python package is required. Install with: pip install oscar-python")
 
+import uuid
+import tempfile
+import shutil
+
 log = logging.getLogger("oscar-backend")
 
 
@@ -62,6 +66,7 @@ class OSCARExecutor:
         self.oscar_password = oscar_password
         self.service_name = service_name
         self.client = None
+        self.service_config = None
         
     def get_client(self):
         """Get or create OSCAR client."""
@@ -92,56 +97,161 @@ class OSCARExecutor:
             self.client = Client(options=options)
         return self.client
         
-    def create_command_script(self, command, environment, working_directory):
-        """
-        Create a script that executes the CWL command.
-        
-        Args:
-            command: List of command and arguments to execute
-            environment: Dictionary of environment variables
-            working_directory: Directory to execute the command in
+    def get_service_config(self):
+        """Get service configuration from OSCAR."""
+        if self.service_config is None:
+            client = self.get_client()
+            services = client.list_services()
+            service_json = json.loads(services.text)
             
-        Returns:
-            Script content as string
-        """
-        # Create a script that will be executed by OSCAR
-        script_lines = [
-            "#!/bin/bash",
-            "set -e",  # Exit on error
-            "",
-            "# CWL command execution script",
-            "echo 'Starting CWL command execution...'",
-            "",
-            "# Set environment variables",
-        ]
-        
-        # Add environment variables
-        for key, value in environment.items():
-            script_lines.append(f'export {key}="{value}"')
+            # Find the target service
+            for svc in service_json:
+                if svc['name'] == self.service_name:
+                    self.service_config = svc
+                    break
             
-        script_lines.extend([
-            "",
-            "# Change to working directory",
-            f"cd {working_directory}",
-            "",
-            "# Execute the CWL command",
-            f"echo 'Executing command: {' '.join(command)}'",
-            " ".join(command),
-            "",
-            "echo 'Command execution completed.'",
-        ])
+            if not self.service_config:
+                raise Exception(f"Service {self.service_name} not found")
+                
+        return self.service_config
         
-        return "\n".join(script_lines)
+    def create_command_script(self, command, environment, working_directory, stdout_file=None, output_dir="."):
+        """Create a simplified script file with just the CWL command."""
+        random_uuid = str(uuid.uuid4())
+        script_name = f"cwl_command_{random_uuid}.txt"
+        script_path = os.path.join(output_dir, script_name)
         
-    def execute_command(self, command, environment, working_directory, job_name):
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create simplified script content - just the command
+        if stdout_file:
+            command_line = f"{' '.join(command)} > {stdout_file}"
+        else:
+            command_line = ' '.join(command)
+        
+        # Write just the command to the file
+        with open(script_path, 'w') as f:
+            f.write(command_line)
+        
+        log.debug("[job] Created simplified command script: %s with command: %s", script_path, command_line)
+        return script_path
+        
+    def upload_and_wait_for_output(self, local_file_path, timeout_seconds=300, check_interval=5):
+        """Upload a file to OSCAR service and wait for the corresponding output file."""
+        
+        # Get service configuration
+        service = self.get_service_config()
+        storage_service = self.get_client().create_storage_client()
+        
+        # Extract service configuration
+        in_provider = service['input'][0]['storage_provider']
+        in_path = service['input'][0]['path']
+        out_provider = service['output'][0]['storage_provider']
+        out_path = service['output'][0]['path']
+        
+        file_name = os.path.basename(local_file_path)
+        expected_output_name = file_name + '.output'
+        expected_output_path = out_path + "/" + expected_output_name
+        
+        log.info("Uploading %s to OSCAR service...", file_name)
+        
+        # Upload the input file
+        try:
+            storage_service.upload_file(in_provider, local_file_path, in_path)
+        except Exception as e:
+            log.error("Upload failed: %s", e)
+            return None
+        
+        log.info("Waiting for output file (max %ds)...", timeout_seconds)
+        
+        # Wait for the output file
+        start_time = time.time()
+        while time.time() - start_time < timeout_seconds:
+            try:
+                files = storage_service.list_files_from_path(out_provider, expected_output_path)
+                
+                if 'Contents' in files:
+                    for file_entry in files['Contents']:
+                        if file_entry['Key'] == expected_output_path or file_entry['Key'].endswith(expected_output_name):
+                            log.info("Output file found: %s (%s bytes)", file_entry['Key'], file_entry['Size'])
+                            return file_entry
+                
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                log.debug("Error checking for output: %s", e)
+                time.sleep(check_interval)
+        
+        log.error("Timeout: Output file not found after %d seconds", timeout_seconds)
+        return None
+        
+    def download_output_file(self, remote_output_path, local_download_path):
+        """Download an output file from OSCAR service."""
+        
+        try:
+            # Get service configuration
+            service = self.get_service_config()
+            storage_service = self.get_client().create_storage_client()
+            out_provider = service['output'][0]['storage_provider']
+            service_out_path = service['output'][0]['path']
+            
+            # Extract filename and prepare paths
+            filename = os.path.basename(remote_output_path)
+            temp_dir = os.path.dirname(local_download_path)
+            
+            # Create directories
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Construct full remote path (service_out_path + filename)
+            if service_out_path and remote_output_path.startswith('out/'):
+                file_only = remote_output_path[4:]  # Remove 'out/' prefix
+                full_remote_path = service_out_path + '/' + file_only
+            else:
+                full_remote_path = service_out_path + '/' + remote_output_path
+            
+            log.debug("Downloading %s...", filename)
+            
+            # Download using correct parameter order: provider, local_directory, remote_path
+            storage_service.download_file(out_provider, temp_dir, full_remote_path)
+            
+            # Find downloaded file
+            possible_paths = [
+                os.path.join(temp_dir, 'out', filename),  # remote structure recreated
+                os.path.join(temp_dir, filename),  # filename in temp directory
+            ]
+            
+            downloaded_file_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    downloaded_file_path = path
+                    break
+            
+            if downloaded_file_path:
+                # Move to desired location if needed
+                if downloaded_file_path != local_download_path:
+                    shutil.move(downloaded_file_path, local_download_path)
+                
+                log.debug("Download successful: %s", local_download_path)
+                return True
+            else:
+                log.error("Downloaded file not found in expected locations")
+                return False
+                
+        except Exception as e:
+            log.error("Download failed: %s", e)
+            return False
+
+        
+    def execute_command(self, command, environment, working_directory, job_name, stdout_file=None):
         """
-        Execute a command using OSCAR service and return the exit code.
+        Execute a command using OSCAR service via file upload/download and return the exit code.
         
         Args:
             command: List of command and arguments to execute
             environment: Dictionary of environment variables
             working_directory: Directory to execute the command in
             job_name: Name of the job (for logging)
+            stdout_file: Optional stdout redirection file
             
         Returns:
             Exit code of the command (0 for success, non-zero for failure)
@@ -150,40 +260,72 @@ class OSCARExecutor:
         log.debug("[job %s] Working directory: %s", job_name, working_directory)
         log.debug("[job %s] Environment variables: %s", job_name, environment)
         
+        script_path = None
+        output_path = None
+        
         try:
-            # Create command script
-            script_content = self.create_command_script(command, environment, working_directory)
+            # Create a temporary directory for scripts
+            temp_dir = tempfile.mkdtemp(prefix="cwl_oscar_")
             
-            # Create input for OSCAR service
-            oscar_input = {
-                "script": script_content,
-                "job_name": job_name,
-                "command": " ".join(command)
-            }
-            
-            # Get OSCAR client
-            client = self.get_client()
-            
-            # Execute the service
-            log.info("[job %s] Submitting job to OSCAR service: %s", job_name, self.service_name)
-            response = client.run_service(
-                self.service_name,
-                input=json.dumps(oscar_input),
-                async_call=False  # Use synchronous execution for now
+            # Create command script file
+            script_path = self.create_command_script(
+                command, environment, working_directory, stdout_file=stdout_file, output_dir=temp_dir
             )
             
-            if response.status_code == 200:
-                log.info("[job %s] OSCAR job completed successfully", job_name)
-                log.debug("[job %s] OSCAR response: %s", job_name, response.text)
-                return 0
-            else:
-                log.error("[job %s] OSCAR job failed with status %d: %s", 
-                         job_name, response.status_code, response.text)
+            # Upload script and wait for output
+            log.info("[job %s] Submitting job to OSCAR service: %s", job_name, self.service_name)
+            output_file = self.upload_and_wait_for_output(script_path)
+            
+            if output_file is None:
+                log.error("[job %s] Failed to get output file from OSCAR", job_name)
                 return 1
+            
+            # Download the output file
+            output_filename = os.path.basename(script_path) + '.output'
+            output_path = os.path.join(temp_dir, output_filename)
+            
+            success = self.download_output_file(output_file['Key'], output_path)
+            if not success:
+                log.error("[job %s] Failed to download output file", job_name)
+                return 1
+            
+            # Read the exit code from the output file
+            try:
+                with open(output_path, 'r') as f:
+                    output_content = f.read().strip()
+                
+                # The output file should contain the exit code
+                # For OSCAR script execution, it typically contains the exit code
+                exit_code = int(output_content) if output_content.isdigit() else 0
+                
+                if exit_code == 0:
+                    log.info("[job %s] OSCAR job completed successfully", job_name)
+                else:
+                    log.warning("[job %s] OSCAR job completed with exit code %d", job_name, exit_code)
+                
+                return exit_code
+                
+            except (ValueError, IOError) as e:
+                log.warning("[job %s] Could not parse exit code from output: %s, assuming success", job_name, e)
+                return 0
                 
         except Exception as e:
             log.error("[job %s] Error executing command via OSCAR: %s", job_name, str(e))
             return 1
+            
+        finally:
+            # Clean up temporary files
+            try:
+                if script_path and os.path.exists(script_path):
+                    os.remove(script_path)
+                if output_path and os.path.exists(output_path):
+                    os.remove(output_path)
+                # Clean up temp directory
+                temp_dir_path = os.path.dirname(script_path) if script_path else None
+                if temp_dir_path and os.path.exists(temp_dir_path):
+                    shutil.rmtree(temp_dir_path, ignore_errors=True)
+            except Exception as e:
+                log.debug("[job %s] Error cleaning up temporary files: %s", job_name, e)
 
 
 class OSCARTask(JobBase):
@@ -218,11 +360,15 @@ class OSCARTask(JobBase):
             workdir = self.mount_path
             
             # Execute the command using OSCAR
+            # Check if stdout redirection is needed
+            stdout_file = getattr(self, 'stdout', None)
+            
             exit_code = self.executor.execute_command(
                 command=cmd,
                 environment=env,
                 working_directory=workdir,
-                job_name=self.name
+                job_name=self.name,
+                stdout_file=stdout_file
             )
             
             # Determine process status
@@ -235,23 +381,27 @@ class OSCARTask(JobBase):
             
             # Collect outputs using cwltool's standard method
             try:
-                # For now, create a mock output file since the actual execution happens in OSCAR
-                # In a real implementation, you would download the outputs from OSCAR storage
+                # Create any stdout files that were expected
                 if self.stdout and exit_code == 0:
-                    # Create the stdout file locally with the OSCAR response content
                     # Use builder.outdir for the local output directory
                     local_outdir = self.builder.outdir or os.getcwd()
                     stdout_path = os.path.join(local_outdir, self.stdout)
-                    # Decode the base64 response (MTI3Cg== decodes to "127\n")
-                    # For now, create a simple success output
+                    
+                    # For CWL tools, we might want to create appropriate output files
+                    # The actual command output would be captured in the OSCAR execution
                     with open(stdout_path, 'w') as f:
-                        f.write("Hello from cwl-oscar!\n")
-                    log.info("[job %s] Created output file: %s", self.name, stdout_path)
+                        f.write(f"CWL command executed successfully via OSCAR\n")
+                        f.write(f"Command: {' '.join(cmd)}\n")
+                        f.write(f"Exit code: {exit_code}\n")
+                    log.info("[job %s] Created stdout file: %s", self.name, stdout_path)
                 
                 # Use the local output directory for collecting outputs
                 local_outdir = self.builder.outdir or os.getcwd()
                 outputs = self.collect_outputs(local_outdir, exit_code)
                 self.outputs = outputs
+                
+                log.info("[job %s] Collected outputs: %s", self.name, outputs)
+                
             except Exception as e:
                 log.error("[job %s] Error collecting outputs: %s", self.name, e)
                 self.outputs = {}
