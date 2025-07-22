@@ -26,6 +26,7 @@ except ImportError:
 import uuid
 import tempfile
 import shutil
+import shlex
 
 log = logging.getLogger("oscar-backend")
 
@@ -123,11 +124,10 @@ class OSCARExecutor:
         
         os.makedirs(output_dir, exist_ok=True)
         
-        # Create simplified script content - just the command
-        if stdout_file:
-            command_line = f"{' '.join(command)} > {stdout_file}"
-        else:
-            command_line = ' '.join(command)
+        # Create simplified script content - just the command without any redirection
+        # OSCAR will handle output capture via its script redirection
+        quoted_command = [shlex.quote(arg) for arg in command]
+        command_line = ' '.join(quoted_command)
         
         # Write just the command to the file
         with open(script_path, 'w') as f:
@@ -298,6 +298,27 @@ class OSCARExecutor:
                 # For OSCAR script execution, it typically contains the exit code
                 exit_code = int(output_content) if output_content.isdigit() else 0
                 
+                # If there's a stdout file expected, download the actual command output from mount path
+                if stdout_file:
+                    try:
+                        script_basename = os.path.basename(script_path)
+                        mount_output_key = f"run-script-event2/mount/{script_basename}.output"
+                        mount_output_path = os.path.join(temp_dir, f"{script_basename}.mount.output")
+                        
+                        log.debug("[job %s] Attempting to download command output from: %s", job_name, mount_output_key)
+                        mount_success = self.download_output_file(mount_output_key, mount_output_path)
+                        
+                        if mount_success and os.path.exists(mount_output_path):
+                            # Copy the actual command output to the expected stdout file location
+                            stdout_full_path = os.path.join(temp_dir, stdout_file)
+                            with open(mount_output_path, 'r') as src, open(stdout_full_path, 'w') as dst:
+                                dst.write(src.read())
+                            log.info("[job %s] Successfully captured command output to %s", job_name, stdout_file)
+                        else:
+                            log.warning("[job %s] Could not download command output from mount path, using exit code: %d", job_name, exit_code)
+                    except Exception as e:
+                        log.warning("[job %s] Error downloading command output: %s", job_name, str(e))
+                
                 if exit_code == 0:
                     log.info("[job %s] OSCAR job completed successfully", job_name)
                 else:
@@ -382,18 +403,21 @@ class OSCARTask(JobBase):
             # Collect outputs using cwltool's standard method
             try:
                 # Create any stdout files that were expected
-                if self.stdout and exit_code == 0:
+                if self.stdout:
                     # Use builder.outdir for the local output directory
                     local_outdir = self.builder.outdir or os.getcwd()
                     stdout_path = os.path.join(local_outdir, self.stdout)
                     
-                    # For CWL tools, we might want to create appropriate output files
-                    # The actual command output would be captured in the OSCAR execution
-                    with open(stdout_path, 'w') as f:
-                        f.write(f"CWL command executed successfully via OSCAR\n")
-                        f.write(f"Command: {' '.join(cmd)}\n")
-                        f.write(f"Exit code: {exit_code}\n")
-                    log.info("[job %s] Created stdout file: %s", self.name, stdout_path)
+                    # Check if the stdout file was already created by OSCAR execution
+                    if not os.path.exists(stdout_path):
+                        # Create a default stdout file if OSCAR didn't provide the actual output
+                        with open(stdout_path, 'w') as f:
+                            f.write(f"CWL command executed successfully via OSCAR\n")
+                            f.write(f"Command: {' '.join(cmd)}\n")
+                            f.write(f"Exit code: {exit_code}\n")
+                        log.info("[job %s] Created default stdout file: %s", self.name, stdout_path)
+                    else:
+                        log.info("[job %s] Using OSCAR-provided stdout file: %s", self.name, stdout_path)
                 
                 # Use the local output directory for collecting outputs
                 local_outdir = self.builder.outdir or os.getcwd()

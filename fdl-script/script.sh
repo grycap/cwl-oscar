@@ -2,6 +2,10 @@
 
 echo "Running run-script-event: File available in $INPUT_FILE_PATH"
 
+# Sleeping for 10 seconds
+echo "SCRIPT: Sleeping for 10 seconds"
+sleep 10
+
 FILE_NAME=$(basename "$INPUT_FILE_PATH")
 OUTPUT_FILE="$TMP_OUTPUT_DIR/$FILE_NAME.output"
 ERROR_FILE="$TMP_OUTPUT_DIR/$FILE_NAME.error"
