@@ -59,10 +59,17 @@ def main(args=None):
         print("cwl-oscar: error: argument --oscar-endpoint is required")
         return 1
 
-    if parsed_args.oscar_token is None:
+    # Check authentication parameters
+    if parsed_args.oscar_token is None and parsed_args.oscar_username is None:
         print(versionstring())
         parser.print_usage()
-        print("cwl-oscar: error: argument --oscar-token is required")
+        print("cwl-oscar: error: either --oscar-token or --oscar-username is required")
+        return 1
+    
+    if parsed_args.oscar_username is not None and parsed_args.oscar_password is None:
+        print(versionstring())
+        parser.print_usage()
+        print("cwl-oscar: error: --oscar-password is required when using --oscar-username")
         return 1
 
     if parsed_args.quiet:
@@ -83,6 +90,8 @@ def main(args=None):
         make_oscar_tool, 
         oscar_endpoint=parsed_args.oscar_endpoint,
         oscar_token=parsed_args.oscar_token,
+        oscar_username=parsed_args.oscar_username,
+        oscar_password=parsed_args.oscar_password,
         mount_path=parsed_args.mount_path,
         service_name=parsed_args.service_name
     )
@@ -104,6 +113,8 @@ def main(args=None):
         loading_context=loading_context,
         oscar_endpoint=parsed_args.oscar_endpoint,
         oscar_token=parsed_args.oscar_token,
+        oscar_username=parsed_args.oscar_username,
+        oscar_password=parsed_args.oscar_password,
         mount_path=parsed_args.mount_path,
         service_name=parsed_args.service_name
     )
@@ -125,6 +136,8 @@ def oscar_execute(process,           # type: Process
                   loading_context,   # type: LoadingContext
                   oscar_endpoint,
                   oscar_token,
+                  oscar_username,
+                  oscar_password,
                   mount_path,
                   service_name,
                   logger=log
@@ -144,8 +157,17 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     parser.add_argument("--oscar-endpoint", type=str, 
                         default=DEFAULT_OSCAR_ENDPOINT,
                         help="OSCAR cluster endpoint URL")
-    parser.add_argument("--oscar-token", type=str,
-                        help="OSCAR authentication token")
+    
+    # Authentication options - either token or username/password
+    auth_group = parser.add_mutually_exclusive_group()
+    auth_group.add_argument("--oscar-token", type=str,
+                           help="OSCAR OIDC authentication token")
+    auth_group.add_argument("--oscar-username", type=str,
+                           help="OSCAR username for basic authentication")
+    
+    parser.add_argument("--oscar-password", type=str,
+                        help="OSCAR password for basic authentication (required if --oscar-username is used)")
+    
     parser.add_argument("--mount-path", type=str,
                         default=DEFAULT_MOUNT_PATH,
                         help="Mount path for shared data")
