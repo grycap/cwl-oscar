@@ -1,20 +1,20 @@
 functions:
   oscar:
   - grnet:
-      name: run-script-event2
+      name: run-script
       memory: 1Gi
       cpu: '1.0'
       image: opensourcefoundries/minideb:jessie
       script: script.sh
       environment:
         variables:
-          MOUNT_PATH: "/mnt/run-script-event2/mount"
+          MOUNT_PATH: "/mnt/run-script/mount"
       input:
       - storage_provider: minio.default
-        path: run-script-event2/in
+        path: run-script/in
       output:
       - storage_provider: minio.default
-        path: run-script-event2/out
+        path: run-script/out
       mount:
         storage_provider: minio.default
-        path: /run-script-event2/mount
+        path: /run-script/mount

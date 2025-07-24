@@ -1,0 +1,20 @@
+functions:
+  oscar:
+  - grnet:
+      name: run-command
+      memory: 1Gi
+      cpu: '1.0'
+      image: opensourcefoundries/minideb:jessie
+      script: script.sh
+      environment:
+        variables:
+          MOUNT_PATH: "/mnt/run-command/mount"
+      input:
+      - storage_provider: minio.default
+        path: run-command/in
+      output:
+      - storage_provider: minio.default
+        path: run-command/out
+      mount:
+        storage_provider: minio.default
+        path: /run-command/mount
