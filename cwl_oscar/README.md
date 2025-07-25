@@ -290,9 +290,6 @@ Enable debug logging to see detailed execution information:
 ./cwl-oscar --debug --oscar-endpoint ... --oscar-token ... workflow.cwl inputs.json
 ```
 
-## License
-
-This project follows the same license as the parent cwl-tes project.
 
 ## Contributing
 

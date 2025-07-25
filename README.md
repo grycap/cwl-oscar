@@ -145,18 +145,3 @@ export MOUNT_PATH=/mnt/cwl2o-data/mount
 # Now you can run without specifying these parameters
 ./docker-run.sh run examples/hello.cwl examples/input.json
 ```
-
-### Using docker-compose
-
-Alternatively, you can use docker-compose:
-
-```bash
-# Build and run with docker-compose
-docker-compose run cwl-oscar --version
-
-# Run tests
-docker-compose run cwl-oscar-test
-
-# Development mode with live code editing
-docker-compose run cwl-oscar-dev --help
-```
