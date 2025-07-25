@@ -138,11 +138,10 @@ class OSCARExecutor:
             escaped_value = str(value).replace('"', '\\"').replace('$', '\\$')
             script_content += f'export {key}="{escaped_value}"\n'
         
-        # Create and change to run-specific work directory
-        script_content += "\n# Create and change to run-specific work directory\n"
-        script_content += "WORK_DIR=\"$CWL_MOUNT_PATH/runs/$CWL_JOB_ID\"\n"
-        script_content += "mkdir -p \"$WORK_DIR\"\n"
-        script_content += "cd \"$WORK_DIR\"\n\n"
+        # Use TMP_OUTPUT_DIR as workspace (available by default in OSCAR execution)
+        script_content += "\n# Use TMP_OUTPUT_DIR as workspace\n"
+        script_content += "cd \"$TMP_OUTPUT_DIR\"\n"
+        script_content += "echo \"Working in: $TMP_OUTPUT_DIR\"\n\n"
         
         # Execute the main command (cwltool handles input/output file management)
         script_content += "# Execute CWL command\n"
@@ -156,6 +155,18 @@ class OSCARExecutor:
             script_content += f"{command_line} > {shlex.quote(stdout_file)} 2>&1\n"
         else:
             script_content += f"{command_line}\n"
+        
+        # Store the exit code
+        script_content += "exit_code=$?\n\n"
+        
+        # Copy all output from TMP_OUTPUT_DIR to the mount path
+        script_content += "# Copy output files to mount path\n"
+        script_content += "OUTPUT_DIR=\"$CWL_MOUNT_PATH/$CWL_JOB_ID\"\n"
+        script_content += "mkdir -p \"$OUTPUT_DIR\"\n"
+        script_content += "cp -r \"$TMP_OUTPUT_DIR\"/* \"$OUTPUT_DIR\"/ 2>/dev/null || true\n"
+        script_content += "echo \"SCRIPT: Files copied to $OUTPUT_DIR\"\n"
+        script_content += "echo \"SCRIPT: Command completed with exit code: $exit_code\"\n"
+        script_content += "exit $exit_code\n"
         
         # Write the script to file
         with open(script_path, 'w') as f:
@@ -181,7 +192,7 @@ class OSCARExecutor:
         out_path = service['output'][0]['path']
         
         file_name = os.path.basename(local_file_path)
-        expected_output_name = file_name + '.output'
+        expected_output_name = file_name + '.exit_code'
         expected_output_path = out_path + "/" + expected_output_name
         
         log.info("Uploading %s to OSCAR service...", file_name)
@@ -328,13 +339,13 @@ class OSCARExecutor:
                 
                 # The output file should contain the exit code
                 # For OSCAR script execution, it typically contains the exit code
-                exit_code = int(output_content) if output_content.isdigit() else 0
+                exit_code = int(output_content) if output_content.isdigit() else 42
                 
                 # If there's a stdout file expected, download the actual command output from mount path
                 if stdout_file:
                     try:
                         script_basename = os.path.basename(script_path)
-                        mount_output_key = f"run-script-event2/mount/{script_basename}.output"
+                        mount_output_key = f"cwl-oscar4/mount/{script_basename}.output"
                         mount_output_path = os.path.join(temp_dir, f"{script_basename}.mount.output")
                         
                         log.debug("[job %s] Attempting to download command output from: %s", job_name, mount_output_key)
