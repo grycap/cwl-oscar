@@ -52,9 +52,24 @@ class OSCARPathMapper(PathMapper):
         # Call parent setup first to handle the standard path mapping
         super(OSCARPathMapper, self).setup(referenced_files, basedir)
         
-        # Then apply OSCAR-specific path mappings if needed
-        # For now, we'll use the default behavior and just set the mount path
-        # In the future, this could be enhanced to map specific paths to the mount location
+        # Apply OSCAR-specific path mappings
+        # For files already in mount path, use direct mount path access instead of staging
+        for key in list(self._pathmap.keys()):
+            entry = self._pathmap[key]
+            if hasattr(entry, 'resolved') and entry.resolved:
+                resolved_path = entry.resolved
+                
+                # If file is already in the mount path, use it directly without staging
+                if self.mount_path in resolved_path:
+                    log.debug("File already in mount path, using direct access: %s", resolved_path)
+                    # Use the mount path directly - no staging needed
+                    self._pathmap[key] = MapperEnt(
+                        resolved=resolved_path,
+                        target=resolved_path,  # Use same path as target
+                        type=entry.type,
+                        staged=False  # Don't stage - file is already accessible
+                    )
+                    log.debug("Direct mount path mapping: %s -> %s", resolved_path, resolved_path)
 
 
 class OSCARExecutor:
