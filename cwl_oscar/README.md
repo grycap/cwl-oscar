@@ -20,6 +20,8 @@ A CWL executor that runs Common Workflow Language (CWL) workflows on OSCAR clust
 
 ## Installation
 
+### Option 1: Local Installation
+
 1. Install dependencies:
 ```bash
 pip install cwltool oscar-python
@@ -30,12 +32,40 @@ pip install cwltool oscar-python
 chmod +x cwl-oscar
 ```
 
+### Option 2: Docker Installation
+
+1. **Build the Docker image:**
+   ```bash
+   docker build -t cwl-oscar .
+   # OR use the helper script
+   ./docker-run.sh build
+   ```
+
+2. **Run with Docker:**
+   ```bash
+   # Using helper script (recommended)
+   ./docker-run.sh run --oscar-endpoint YOUR_ENDPOINT --oscar-token YOUR_TOKEN workflow.cwl input.json
+   
+   # Using docker directly
+   docker run --rm -v $(pwd):/workspace cwl-oscar \
+     --oscar-endpoint YOUR_ENDPOINT --oscar-token YOUR_TOKEN \
+     workflow.cwl input.json
+   ```
+
+3. **Run tests:**
+   ```bash
+   ./docker-run.sh test
+   ```
+
 ## Configuration
 
 ### Required Parameters
 
 - `--oscar-endpoint`: OSCAR cluster endpoint URL
-- `--oscar-token`: OSCAR authentication token
+
+**Authentication (choose one):**
+- `--oscar-token`: OSCAR OIDC authentication token
+- `--oscar-username` + `--oscar-password`: OSCAR username and password for basic authentication
 
 ### Optional Parameters
 
@@ -46,17 +76,53 @@ chmod +x cwl-oscar
 
 ### Basic Usage
 
+**Local execution with OIDC token:**
 ```bash
 ./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
            --oscar-token YOUR_TOKEN \
            workflow.cwl inputs.json
 ```
 
+**Local execution with username/password:**
+```bash
+./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
+           --oscar-username YOUR_USERNAME \
+           --oscar-password YOUR_PASSWORD \
+           workflow.cwl inputs.json
+```
+
+**Docker execution:**
+```bash
+# Using OIDC token
+./docker-run.sh run --oscar-endpoint https://oscar.test.fedcloud.eu \
+                    --oscar-token YOUR_TOKEN \
+                    workflow.cwl inputs.json
+
+# Using username/password
+./docker-run.sh run --oscar-endpoint https://oscar.test.fedcloud.eu \
+                    --oscar-username YOUR_USERNAME \
+                    --oscar-password YOUR_PASSWORD \
+                    workflow.cwl inputs.json
+
+# Or with environment variables
+export OSCAR_ENDPOINT=https://oscar.test.fedcloud.eu
+export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
+./docker-run.sh run workflow.cwl inputs.json
+```
+
 ### With Custom Mount Path
 
 ```bash
+# With OIDC token
 ./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
            --oscar-token YOUR_TOKEN \
+           --mount-path /mnt/custom/mount \
+           workflow.cwl inputs.json
+
+# With username/password
+./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
+           --oscar-username YOUR_USERNAME \
+           --oscar-password YOUR_PASSWORD \
            --mount-path /mnt/custom/mount \
            workflow.cwl inputs.json
 ```
@@ -65,7 +131,8 @@ chmod +x cwl-oscar
 
 ```bash
 ./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-token YOUR_TOKEN \
+           --oscar-username YOUR_USERNAME \
+           --oscar-password YOUR_PASSWORD \
            --service-name my-custom-service \
            workflow.cwl inputs.json
 ```
@@ -74,7 +141,8 @@ chmod +x cwl-oscar
 
 ```bash
 ./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-token YOUR_TOKEN \
+           --oscar-username YOUR_USERNAME \
+           --oscar-password YOUR_PASSWORD \
            --debug \
            workflow.cwl inputs.json
 ```

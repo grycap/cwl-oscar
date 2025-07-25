@@ -46,12 +46,16 @@ Thumbs.db
 .git/
 .gitignore
 
-# Temporary files
+# Temporary files and directories
 tmp*/
 temp/
+*tmp*
+*.tmp
+*.temp
 
 # Logs
 *.log
+logs/
 
 # Coverage reports
 htmlcov/
@@ -67,10 +71,152 @@ htmlcov/
 # Documentation
 docs/_build/
 
-# Local config files
+# SECURITY: Environment and configuration files that may contain secrets
 .env
 .env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+*.env
+config.json
+config.yaml
+config.yml
+secrets.json
+secrets.yaml
+secrets.yml
+.secrets
+.secret
+
+# SECURITY: Credential files
+*password*
+*credential*
+*secret*
+*token*
+*auth*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+
+# SECURITY: SSH and GPG keys
+id_rsa
+id_rsa.pub
+id_dsa
+id_dsa.pub
+id_ecdsa
+id_ecdsa.pub
+id_ed25519
+id_ed25519.pub
+*.ppk
+*.ssh
+.ssh/
+~/.ssh/
+*.gpg
+*.asc
+
+# SECURITY: Cloud provider credentials
+.aws/
+.azure/
+.gcloud/
+.config/gcloud/
+credentials
+*credentials*
+*.credentials
+gcloud-service-key.json
+service-account*.json
+*-service-account.json
+
+# SECURITY: Docker and container secrets
+docker-compose.override.yml
+docker-compose.override.yaml
+.dockercfg
+.docker/
+*secret.yml
+*secret.yaml
+
+# SECURITY: Database connection strings and configs
+*.db
+*.sqlite
+*.sqlite3
+database.yml
+database.yaml
+db.config
+
+# SECURITY: API keys and tokens
+api_key*
+api-key*
+*api_key*
+*api-key*
+*_token
+*-token
+*.token
 
 # Test artifacts
 test-results/
-coverage.xml 
+coverage.xml
+
+# Development and testing files that might contain sensitive data
+test_*.json
+*_test.json
+test_config*
+*test_config*
+integration_test*
+*integration_test*
+
+# Backup files that might contain sensitive information
+*.bak
+*.backup
+*~
+.orig
+
+# Any files explicitly marked as containing secrets
+*CONFIDENTIAL*
+*PRIVATE*
+*SECRET*
+*CREDENTIALS*
+
+# Local development overrides
+local.json
+local.yml
+local.yaml
+override.json
+override.yml
+override.yaml
+
+# Certificate and security files
+*.csr
+*.der
+*.cer
+*.p7b
+*.p7s
+*.spc
+certificates/
+certs/
+
+# Kubernetes secrets
+*secret.yaml
+*secret.yml
+kube-config
+kubeconfig
+.kube/
+
+# Terraform files that might contain sensitive variables
+*.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Helm values files that might contain secrets
+values-*.yaml
+values-*.yml
+*-values.yaml
+*-values.yml
+
+# Any explicitly named sensitive files (add your own patterns here)
+passwords.txt
+secrets.txt
+tokens.txt
+credentials.txt 

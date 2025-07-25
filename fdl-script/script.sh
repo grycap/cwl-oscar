@@ -38,10 +38,6 @@ echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
 bash "$INPUT_FILE_PATH" > "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
 exit_code=$?
 
-# copy the output file to the mounted directory
-cp $TMP_OUTPUT_DIR/$FILE_NAME.out.log $MOUNT_PATH/$FILE_NAME.out.log
-cp $TMP_OUTPUT_DIR/$FILE_NAME.err.log $MOUNT_PATH/$FILE_NAME.err.log
-
 echo "SCRIPT: Command completed with exit code: $exit_code"
 
 # Create output file in TMP_OUTPUT_DIR for OSCAR to detect completion
@@ -53,3 +49,4 @@ fi
 
 echo "Script completed."
 exit $exit_code
+

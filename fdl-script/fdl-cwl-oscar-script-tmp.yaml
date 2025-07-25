@@ -1,20 +1,20 @@
 functions:
   oscar:
   - grnet:
-      name: clt5
+      name: cwl-oscar5
       memory: 1Gi
       cpu: '1.0'
-      image: opensourcefoundries/minideb:jessie
+      image: robertbio/cwl-oscar:linux-amd64
       script: script.sh
       environment:
         variables:
           MOUNT_PATH: "/mnt/cwl-oscar5/mount"
       input:
       - storage_provider: minio.default
-        path: clt5/in
+        path: cwl-oscar5/in
       output:
       - storage_provider: minio.default
-        path: clt5/out
+        path: cwl-oscar5/out
       mount:
         storage_provider: minio.default
         path: /cwl-oscar5/mount
