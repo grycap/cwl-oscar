@@ -339,33 +339,16 @@ class OSCARExecutor:
                 
                 # The output file should contain the exit code
                 # For OSCAR script execution, it typically contains the exit code
-                exit_code = int(output_content) if output_content.isdigit() else 42
-                
-                # If there's a stdout file expected, download the actual command output from mount path
-                if stdout_file:
-                    try:
-                        script_basename = os.path.basename(script_path)
-                        mount_output_key = f"cwl-oscar4/mount/{script_basename}.output"
-                        mount_output_path = os.path.join(temp_dir, f"{script_basename}.mount.output")
-                        
-                        log.debug("[job %s] Attempting to download command output from: %s", job_name, mount_output_key)
-                        mount_success = self.download_output_file(mount_output_key, mount_output_path)
-                        
-                        if mount_success and os.path.exists(mount_output_path):
-                            # Copy the actual command output to the expected stdout file location
-                            stdout_full_path = os.path.join(temp_dir, stdout_file)
-                            with open(mount_output_path, 'r') as src, open(stdout_full_path, 'w') as dst:
-                                dst.write(src.read())
-                            log.info("[job %s] Successfully captured command output to %s", job_name, stdout_file)
-                        else:
-                            log.warning("[job %s] Could not download command output from mount path, using exit code: %d", job_name, exit_code)
-                    except Exception as e:
-                        log.warning("[job %s] Error downloading command output: %s", job_name, str(e))
+                exit_code = int(output_content) if output_content.isdigit() else 0
                 
                 if exit_code == 0:
                     log.info("[job %s] OSCAR job completed successfully", job_name)
                 else:
                     log.warning("[job %s] OSCAR job completed with exit code %d", job_name, exit_code)
+                
+                # Note: All outputs (including stdout) are now available in mount_path/job_id
+                # No need to download them separately as they're copied by the script
+                log.info("[job %s] All outputs have been copied to mount path by the script", job_name)
                 
                 return exit_code
                 
@@ -445,13 +428,30 @@ class OSCARTask(JobBase):
                 log.error("[job %s] failed with exit code %d", self.name, exit_code)
                 process_status = "permanentFail"
             
-            # Let cwltool handle output collection using its standard mechanisms
+            # Collect outputs from the mount path where they were copied
             try:
-                # Use cwltool's standard output collection from the builder's output directory
-                outputs = self.collect_outputs(self.builder.outdir, exit_code)
-                self.outputs = outputs
+                # Outputs are now copied to mount_path/job_id by the script
+                output_dir = os.path.join(self.mount_path, job_id)
+                log.info("[job %s] Looking for outputs in: %s", self.name, output_dir)
                 
-                log.info("[job %s] Collected outputs: %s", self.name, outputs)
+                # Check if output directory exists
+                if os.path.exists(output_dir):
+                    # Update builder's outdir to point to the correct location
+                    original_outdir = self.builder.outdir
+                    self.builder.outdir = output_dir
+                    
+                    # Use cwltool's standard output collection from the mount path
+                    outputs = self.collect_outputs(output_dir, exit_code)
+                    self.outputs = outputs
+                    
+                    # Restore original outdir
+                    self.builder.outdir = original_outdir
+                    
+                    log.info("[job %s] Collected outputs: %s", self.name, outputs)
+                else:
+                    log.warning("[job %s] Output directory not found: %s", self.name, output_dir)
+                    self.outputs = {}
+                    process_status = "permanentFail"
                 
             except Exception as e:
                 log.error("[job %s] Error collecting outputs: %s", self.name, e)
