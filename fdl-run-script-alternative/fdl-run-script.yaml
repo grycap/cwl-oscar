@@ -1,20 +1,20 @@
-functions:
+unctions:
   oscar:
   - grnet:
-      name: cwl-oscar
+      name: run-script
       memory: 1Gi
       cpu: '1.0'
-      image: robertbio/cwl-oscar:linux-amd64
+      image: opensourcefoundries/minideb:jessie
       script: script.sh
       environment:
         variables:
-          MOUNT_PATH: "/mnt/run-script-event3/mount"
+          MOUNT_PATH: "/mnt/run-script/mount"
       input:
       - storage_provider: minio.default
-        path: cwl-oscar/in
+        path: run-script/in
       output:
       - storage_provider: minio.default
-        path: cwl-oscar/out
+        path: run-script/out
       mount:
         storage_provider: minio.default
-        path: /run-script-event3/mount
+        path: /run-script/mount

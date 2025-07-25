@@ -7,7 +7,7 @@ echo "TMP_OUTPUT_DIR: $TMP_OUTPUT_DIR"
 echo "MOUNT_PATH: $MOUNT_PATH"
 echo "=============================="
 
-# Sleep for 10 seconds
+# Sleep for 5 seconds
 sleep 5
 
 FILE_NAME=$(basename "$INPUT_FILE_PATH")
@@ -23,6 +23,11 @@ if [ -z "$MOUNT_PATH" ]; then
     exit 1
 fi
 
+# Check if the mount path is available
+echo "[script.sh] Checking if the mount path is available"
+ls -lah /mnt
+
+
 # Check if the input command script exists
 if [ ! -f "$INPUT_FILE_PATH" ]; then
     echo "ERROR: Command script not found at $INPUT_FILE_PATH"
@@ -37,6 +42,7 @@ echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
 # Redirect stdout to out.log and stderr to err.log
 bash "$INPUT_FILE_PATH" > "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
 exit_code=$?
+
 
 echo "SCRIPT: Command completed with exit code: $exit_code"
 
