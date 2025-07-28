@@ -21,6 +21,9 @@ from cwltool.process import Process
 from .oscar import make_oscar_tool, OSCARPathMapper
 from .__init__ import __version__
 
+# Build time constant - update this string as needed
+BUILD_TIME = "2024-01-15 10:30:00 UTC"
+
 log = logging.getLogger("oscar-backend")
 log.setLevel(logging.INFO)
 # Always use stderr for logging to keep stdout clean for JSON output
@@ -39,7 +42,7 @@ def versionstring():
         cwltool_ver = pkg[0].version
     else:
         cwltool_ver = "unknown"
-    return "%s %s with cwltool %s" % (sys.argv[0], __version__, cwltool_ver)
+    return "%s %s (built: %s) with cwltool %s" % (sys.argv[0], __version__, BUILD_TIME, cwltool_ver)
 
 
 def main(args=None):
@@ -49,6 +52,9 @@ def main(args=None):
 
     parser = arg_parser()
     parsed_args = parser.parse_args(args)
+
+    # Log version information at startup
+    log.info("Starting %s", versionstring())
 
     if parsed_args.version:
         print(versionstring())
