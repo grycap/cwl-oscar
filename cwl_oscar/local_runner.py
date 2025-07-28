@@ -178,7 +178,8 @@ class OSCARLocalRunner:
             script_content += f"  --oscar-password {self.oscar_password} \\\n"
             
         script_content += f"  --mount-path {self.mount_path} \\\n"
-        script_content += f"  --service-name clt4 \\\n"
+        script_content += f"  --quiet \\\n"
+        # script_content += f"  --service-name clt4 \\\n"
         
         if additional_args:
             for arg in additional_args:
@@ -272,8 +273,80 @@ class OSCARLocalRunner:
                             break
                 
                 if completion_found:
-                    log.info("Workflow completed")
-                    return True
+                    log.info("Workflow completed, checking exit code...")
+                    # Download and check the exit code
+                    try:
+                        # Find the actual exit code file path
+                        exit_code_file_key = None
+                        if isinstance(files, dict) and 'Contents' in files:
+                            for file_info in files['Contents']:
+                                if file_info['Key'].endswith(expected_output):
+                                    exit_code_file_key = file_info['Key']
+                                    break
+                        elif isinstance(files, list):
+                            for file_info in files:
+                                file_key = file_info.get('Key', file_info) if isinstance(file_info, dict) else file_info
+                                if file_key.endswith(expected_output):
+                                    exit_code_file_key = file_key
+                                    break
+                        
+                        if exit_code_file_key:
+                            # Download the exit code file to a temporary location
+                            temp_dir = tempfile.mkdtemp()
+                            try:
+                                # Construct full remote path like download_results does
+                                if exit_code_file_key.startswith('out/'):
+                                    # Remove 'out/' prefix and combine with service out path
+                                    file_only = exit_code_file_key[4:]  # Remove 'out/' prefix
+                                    full_remote_path = out_path + '/' + file_only
+                                else:
+                                    # Use as-is if it doesn't start with 'out/'
+                                    full_remote_path = out_path + '/' + exit_code_file_key
+                                
+                                log.debug("Downloading exit code file: provider=%s, path=%s", out_provider, full_remote_path)
+                                storage_service.download_file(out_provider, temp_dir, full_remote_path)
+                                
+                                # Find the downloaded file
+                                downloaded_file = None
+                                for root, dirs, files in os.walk(temp_dir):
+                                    for f in files:
+                                        if f.endswith('.exit_code'):
+                                            downloaded_file = os.path.join(root, f)
+                                            break
+                                    if downloaded_file:
+                                        break
+                                
+                                if downloaded_file and os.path.exists(downloaded_file):
+                                    # Read the exit code
+                                    with open(downloaded_file, 'r') as f:
+                                        exit_code_content = f.read().strip()
+                                    
+                                    log.info("Exit code file content: '%s'", exit_code_content)
+                                    
+                                    if exit_code_content.isdigit():
+                                        exit_code = int(exit_code_content)
+                                        if exit_code == 0:
+                                            log.info("Workflow completed successfully (exit code: 0)")
+                                            return True
+                                        else:
+                                            log.error("Workflow failed with exit code: %d", exit_code)
+                                            return False
+                                    else:
+                                        log.warning("Invalid exit code format: '%s', treating as failure", exit_code_content)
+                                        return False
+                                else:
+                                    log.warning("Could not find downloaded exit code file, treating as failure")
+                                    return False
+                            finally:
+                                # Clean up temp directory
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                        else:
+                            log.warning("Could not determine exit code file path, treating as failure")
+                            return False
+                            
+                    except Exception as e:
+                        log.error("Error checking exit code: %s, treating as failure", e)
+                        return False
                     
             except Exception as e:
                 log.debug("Error checking for completion: %s", e)

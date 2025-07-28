@@ -27,14 +27,426 @@ import uuid
 import tempfile
 import shutil
 import shlex
+import hashlib
+import yaml
+import contextlib
 
 log = logging.getLogger("oscar-backend")
+
+
+@contextlib.contextmanager
+def suppress_stdout_to_stderr():
+    """Context manager to redirect stdout to stderr during oscar-python operations.
+    
+    This prevents oscar-python library messages from contaminating the JSON output.
+    """
+    import sys
+    original_stdout = sys.stdout
+    try:
+        sys.stdout = sys.stderr
+        yield
+    finally:
+        sys.stdout = original_stdout
+
+
+class OSCARServiceManager:
+    """Manages dynamic OSCAR service creation based on CommandLineTool requirements."""
+    
+    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path):
+        log.debug("OSCARServiceManager: Initializing service manager")
+        log.debug("OSCARServiceManager: OSCAR endpoint: %s", oscar_endpoint)
+        log.debug("OSCARServiceManager: Mount path: %s", mount_path)
+        log.debug("OSCARServiceManager: Using token auth: %s", bool(oscar_token))
+        log.debug("OSCARServiceManager: Using username/password auth: %s", bool(oscar_username and oscar_password))
+        
+        self.oscar_endpoint = oscar_endpoint
+        self.oscar_token = oscar_token
+        self.oscar_username = oscar_username
+        self.oscar_password = oscar_password
+        self.mount_path = mount_path
+        self.client = None
+        self._service_cache = {}  # Cache created services
+        
+        log.debug("OSCARServiceManager: Service manager initialized successfully")
+        
+    def get_client(self):
+        """Get or create OSCAR client."""
+        if self.client is None:
+            log.debug("OSCARServiceManager: Creating new OSCAR client")
+            
+            if self.oscar_token:
+                # Use OIDC token authentication
+                log.debug("OSCARServiceManager: Using OIDC token authentication")
+                options = {
+                    'cluster_id': 'oscar-cluster',
+                    'endpoint': self.oscar_endpoint,
+                    'oidc_token': self.oscar_token,
+                    'ssl': 'True'
+                }
+            else:
+                # Use basic username/password authentication
+                log.debug("OSCARServiceManager: Using username/password authentication")
+                options = {
+                    'cluster_id': 'oscar-cluster',
+                    'endpoint': self.oscar_endpoint,
+                    'user': self.oscar_username,
+                    'password': self.oscar_password,
+                    'ssl': 'True'
+                }
+            
+            log.debug("OSCARServiceManager: Client options: %s", {k: '***' if k in ['oidc_token', 'password'] else v for k, v in options.items()})
+            self.client = Client(options=options)
+            log.debug("OSCARServiceManager: OSCAR client created successfully")
+        else:
+            log.debug("OSCARServiceManager: Reusing existing OSCAR client")
+            
+        return self.client
+        
+    def extract_service_requirements(self, tool_spec):
+        """Extract service requirements from CommandLineTool specification."""
+        log.debug("OSCARServiceManager: Extracting service requirements from tool spec")
+        log.debug("OSCARServiceManager: Tool ID: %s", tool_spec.get('id', 'unknown'))
+        log.debug("OSCARServiceManager: Tool baseCommand: %s", tool_spec.get('baseCommand', 'unknown'))
+        
+        requirements = {
+            'memory': '1Gi',  # Default
+            'cpu': '1.0',     # Default  
+            'image': 'opensourcefoundries/minideb:jessie',  # Default
+            'environment': {}
+        }
+        log.debug("OSCARServiceManager: Default requirements: %s", requirements)
+        
+        # Check for DockerRequirement
+        if 'requirements' in tool_spec:
+            log.debug("OSCARServiceManager: Processing %d requirements", len(tool_spec['requirements']))
+            for req in tool_spec['requirements']:
+                req_class = req.get('class')
+                log.debug("OSCARServiceManager: Processing requirement class: %s", req_class)
+                
+                if req_class == 'DockerRequirement':
+                    if 'dockerPull' in req:
+                        old_image = requirements['image']
+                        requirements['image'] = req['dockerPull']
+                        log.debug("OSCARServiceManager: Updated Docker image from '%s' to '%s'", old_image, requirements['image'])
+                        
+                elif req_class == 'ResourceRequirement':
+                    if 'ramMin' in req:
+                        ram_mb = req['ramMin']
+                        old_memory = requirements['memory']
+                        requirements['memory'] = f"{ram_mb}Mi"
+                        log.debug("OSCARServiceManager: Updated memory from '%s' to '%s'", old_memory, requirements['memory'])
+                    if 'coresMin' in req:
+                        old_cpu = requirements['cpu']
+                        requirements['cpu'] = str(req['coresMin'])
+                        log.debug("OSCARServiceManager: Updated CPU from '%s' to '%s'", old_cpu, requirements['cpu'])
+                        
+                elif req_class == 'EnvVarRequirement':
+                    if 'envDef' in req:
+                        # envDef is a dictionary in CWL spec
+                        if isinstance(req['envDef'], dict):
+                            log.debug("OSCARServiceManager: Adding %d environment variables", len(req['envDef']))
+                            requirements['environment'].update(req['envDef'])
+                        else:
+                            # Handle legacy format if it's a list
+                            log.debug("OSCARServiceManager: Processing legacy envDef list format")
+                            for env_def in req['envDef']:
+                                if isinstance(env_def, dict):
+                                    requirements['environment'][env_def['envName']] = env_def['envValue']
+                                    log.debug("OSCARServiceManager: Added env var: %s=%s", env_def['envName'], env_def['envValue'])
+        
+        # Check hints as well
+        if 'hints' in tool_spec:
+            log.debug("OSCARServiceManager: Processing %d hints", len(tool_spec['hints']))
+            for hint in tool_spec['hints']:
+                hint_class = hint.get('class')
+                log.debug("OSCARServiceManager: Processing hint class: %s", hint_class)
+                
+                if hint_class == 'DockerRequirement':
+                    if 'dockerPull' in hint:
+                        old_image = requirements['image']
+                        requirements['image'] = hint['dockerPull']
+                        log.debug("OSCARServiceManager: Updated Docker image from hint: '%s' to '%s'", old_image, requirements['image'])
+        
+        log.debug("OSCARServiceManager: Final extracted requirements: %s", requirements)
+        return requirements
+        
+    def generate_service_name(self, tool_spec, requirements):
+        """Generate a unique service name based on tool and requirements."""
+        log.debug("OSCARServiceManager: Generating service name for tool")
+        
+        # Create a meaningful tool ID, avoiding file paths
+        tool_id = tool_spec.get('id', '')
+        log.debug("OSCARServiceManager: Original tool ID: '%s'", tool_id)
+        
+        if not tool_id:
+            # Use baseCommand if no id
+            base_cmd = tool_spec.get('baseCommand', 'unknown')
+            log.debug("OSCARServiceManager: No tool ID, using baseCommand: %s", base_cmd)
+            if isinstance(base_cmd, list):
+                tool_id = '-'.join(str(x) for x in base_cmd[:2])  # First two commands
+                log.debug("OSCARServiceManager: Generated tool ID from list baseCommand: '%s'", tool_id)
+            else:
+                tool_id = str(base_cmd)
+                log.debug("OSCARServiceManager: Generated tool ID from string baseCommand: '%s'", tool_id)
+        
+        # Clean up file:// URLs and paths to get just the tool name
+        if tool_id.startswith('file://'):
+            # Extract just the filename without path and extension
+            import os
+            old_tool_id = tool_id
+            tool_id = os.path.splitext(os.path.basename(tool_id))[0]
+            log.debug("OSCARServiceManager: Cleaned file:// URL from '%s' to '%s'", old_tool_id, tool_id)
+        elif '/' in tool_id:
+            # Extract just the last part of the path
+            old_tool_id = tool_id
+            tool_id = tool_id.split('/')[-1]
+            log.debug("OSCARServiceManager: Extracted filename from path '%s' to '%s'", old_tool_id, tool_id)
+            
+        # Create a hash based on tool content and requirements
+        tool_content = json.dumps({
+            'baseCommand': tool_spec.get('baseCommand'),
+            'class': tool_spec.get('class'),
+            'requirements': requirements
+        }, sort_keys=True)
+        log.debug("OSCARServiceManager: Tool content for hashing: %s", tool_content)
+        
+        service_hash = hashlib.md5(tool_content.encode()).hexdigest()[:8]
+        log.debug("OSCARServiceManager: Generated service hash: %s", service_hash)
+        
+        # Clean tool ID for service name
+        clean_id = ''.join(c for c in tool_id if c.isalnum() or c in '-_').lower()
+        clean_id = clean_id[:15]  # Shorter limit
+        log.debug("OSCARServiceManager: Cleaned tool ID: '%s' -> '%s'", tool_id, clean_id)
+        
+        if not clean_id:
+            clean_id = 'tool'
+            log.debug("OSCARServiceManager: Empty clean ID, using default: '%s'", clean_id)
+        
+        final_service_name = f"clt-{clean_id}-{service_hash}"
+        log.debug("OSCARServiceManager: Final generated service name: '%s'", final_service_name)
+        return final_service_name
+        
+    def create_service_definition(self, service_name, requirements, mount_path):
+        """Create OSCAR service definition."""
+        log.debug("OSCARServiceManager: Creating service definition for service: %s", service_name)
+        log.debug("OSCARServiceManager: Requirements: %s", requirements)
+        log.debug("OSCARServiceManager: Mount path: %s", mount_path)
+        
+        # Extract mount path components for the mount configuration
+        mount_parts = mount_path.strip('/').split('/')
+        log.debug("OSCARServiceManager: Mount path parts: %s", mount_parts)
+        
+        # Remove 'mnt' prefix if present to get the actual mount path
+        if mount_parts[0] == 'mnt':
+            mount_base = '/'.join(mount_parts[1:])
+            log.debug("OSCARServiceManager: Removed 'mnt' prefix, mount base: %s", mount_base)
+        else:
+            mount_base = '/'.join(mount_parts)
+            log.debug("OSCARServiceManager: No 'mnt' prefix, mount base: %s", mount_base)
+        
+        # Embed the script content directly
+        script_content = '''#!/bin/bash
+
+# Debug: Show environment variables
+echo "=== Environment Variables ==="
+echo "INPUT_FILE_PATH: $INPUT_FILE_PATH"
+echo "TMP_OUTPUT_DIR: $TMP_OUTPUT_DIR"
+echo "MOUNT_PATH: $MOUNT_PATH"
+echo "=============================="
+
+# Sleep for 5 seconds
+sleep 5
+
+FILE_NAME=$(basename "$INPUT_FILE_PATH")
+
+# Check if required environment variables are set
+if [ -z "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: INPUT_FILE_PATH environment variable not set"
+    exit 1
+fi
+
+if [ -z "$MOUNT_PATH" ]; then
+    echo "ERROR: MOUNT_PATH environment variable not set"
+    exit 1
+fi
+
+# Check if the mount path is available
+echo "[script.sh] Checking if the mount path is available"
+ls -lah /mnt
+
+
+# Check if the input command script exists
+if [ ! -f "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: Command script not found at $INPUT_FILE_PATH"
+    exit 1
+fi
+
+echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
+
+
+# Execute the command script with bash
+# The command script will handle its own working directory and environment setup
+# Redirect stdout to out.log and stderr to err.log
+bash "$INPUT_FILE_PATH" > "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
+exit_code=$?
+
+
+echo "SCRIPT: Command completed with exit code: $exit_code"
+
+# Create output file in TMP_OUTPUT_DIR for OSCAR to detect completion
+if [ -n "$TMP_OUTPUT_DIR" ]; then
+    OUTPUT_FILE="$TMP_OUTPUT_DIR/$FILE_NAME.exit_code"
+    echo "$exit_code" > "$OUTPUT_FILE"
+    echo "SCRIPT: Exit code written to: $OUTPUT_FILE"
+fi
+
+echo "Script completed."
+exit $exit_code
+'''
+        
+        log.debug("OSCARServiceManager: Using embedded script content (%d characters)", len(script_content))
+        
+        service_def = {
+            'functions': {
+                'oscar': [{
+                    'grnet': {
+                        'name': service_name,
+                        'memory': requirements['memory'],
+                        'cpu': requirements['cpu'],
+                        'image': requirements['image'],
+                        'script': script_content,
+                        'environment': {
+                            'variables': {
+                                'MOUNT_PATH': mount_path,
+                                **requirements['environment']
+                            }
+                        },
+                        'input': [{
+                            'storage_provider': 'minio.default',
+                            'path': f'{service_name}/in'
+                        }],
+                        'output': [{
+                            'storage_provider': 'minio.default', 
+                            'path': f'{service_name}/out'
+                        }],
+                        'mount': {
+                            'storage_provider': 'minio.default',
+                            'path': f'/{mount_base}'
+                        }
+                    }
+                }]
+            }
+        }
+        
+        log.debug("OSCARServiceManager: Created service definition: %s", json.dumps(service_def, indent=2))
+        return service_def
+        
+    def get_or_create_service(self, tool_spec):
+        """Get existing service or create new one for the CommandLineTool."""
+        log.debug("OSCARServiceManager: Starting get_or_create_service for tool: %s", tool_spec.get('id', 'unknown'))
+        
+        requirements = self.extract_service_requirements(tool_spec)
+        service_name = self.generate_service_name(tool_spec, requirements)
+        
+        log.info("OSCARServiceManager: Generated service name '%s' for tool '%s'", service_name, tool_spec.get('id', 'unknown'))
+        
+        # Check cache first
+        if service_name in self._service_cache:
+            log.debug("OSCARServiceManager: Using cached service: %s", service_name)
+            log.info("OSCARServiceManager: Service '%s' found in cache, reusing existing service", service_name)
+            return service_name
+            
+        log.debug("OSCARServiceManager: Service not in cache, checking OSCAR cluster")
+        client = self.get_client()
+        
+        # Check if service already exists
+        def check_service_exists(name):
+            log.debug("OSCARServiceManager: Checking if service '%s' exists on OSCAR cluster", name)
+            try:
+                services_response = client.list_services()
+                log.debug("OSCARServiceManager: List services response status: %d", services_response.status_code)
+                
+                if services_response.status_code == 200:
+                    existing_services = json.loads(services_response.text)
+                    log.debug("OSCARServiceManager: Found %d existing services on cluster", len(existing_services))
+                    
+                    for service in existing_services:
+                        service_name_in_list = service.get('name')
+                        log.debug("OSCARServiceManager: Checking service: %s", service_name_in_list)
+                        if service_name_in_list == name:
+                            log.info("OSCARServiceManager: Service already exists on cluster: %s", name)
+                            self._service_cache[name] = service
+                            return service
+                    
+                    log.debug("OSCARServiceManager: Service '%s' not found among existing services", name)
+                else:
+                    log.warning("OSCARServiceManager: Failed to list services, status code: %d", services_response.status_code)
+                    
+            except Exception as e:
+                log.warning("OSCARServiceManager: Could not check existing services: %s", e)
+            return None
+        
+        # First check if service exists
+        existing_service = check_service_exists(service_name)
+        if existing_service:
+            log.info("OSCARServiceManager: Using existing service: %s", service_name)
+            return service_name
+            
+        # Create new service
+        log.info("OSCARServiceManager: Creating new service for tool: %s -> %s", tool_spec.get('id', 'unknown'), service_name)
+        service_def = self.create_service_definition(service_name, requirements, self.mount_path)
+        
+        try:
+            # Create service using OSCAR API - pass just the service definition
+            inner_service_def = service_def['functions']['oscar'][0]['grnet']
+            log.debug("OSCARServiceManager: Sending service creation request to OSCAR API")
+            log.debug("OSCARServiceManager: Service definition to create: %s", json.dumps(inner_service_def, indent=2))
+            
+            response = client.create_service(inner_service_def)
+            log.debug("OSCARServiceManager: Service creation response status: %d", response.status_code)
+            log.debug("OSCARServiceManager: Service creation response text: %s", response.text)
+            
+            # Wait a bit for service setup to complete regardless of response
+            import time
+            log.debug("OSCARServiceManager: Waiting 3 seconds for service setup to complete")
+            time.sleep(3)
+            
+            # Always check if service was created, regardless of API response
+            log.debug("OSCARServiceManager: Verifying service creation by checking if service exists")
+            created_service = check_service_exists(service_name)
+            if created_service:
+                log.info("OSCARServiceManager: Service successfully created and verified: %s", service_name)
+                return service_name
+            
+            if response.status_code in [200, 201]:
+                log.info("OSCARServiceManager: Service creation API succeeded (status %d): %s", response.status_code, service_name)
+                self._service_cache[service_name] = service_def
+                return service_name
+            else:
+                log.error("OSCARServiceManager: Failed to create service %s (status %d): %s", service_name, response.status_code, response.text)
+                
+        except Exception as e:
+            log.error("OSCARServiceManager: Error creating service %s: %s", service_name, e)
+            
+            # Check one more time if service exists despite exception
+            import time
+            log.debug("OSCARServiceManager: Waiting 2 seconds and checking again after exception")
+            time.sleep(2)
+            created_service = check_service_exists(service_name)
+            if created_service:
+                log.info("OSCARServiceManager: Service exists despite exception: %s", service_name)
+                return service_name
+            
+        # Fall back to default service only as last resort
+        log.warning("OSCARServiceManager: Falling back to default service 'run-script-event2'")
+        return "run-script-event2"
 
 
 def make_oscar_tool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name):
     """cwl-oscar specific factory for CWL Process generation."""
     if "class" in spec and spec["class"] == "CommandLineTool":
-        return OSCARCommandLineTool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name)
+        # Pass None as service_name since it will be determined dynamically
+        return OSCARCommandLineTool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, None)
     else:
         return default_make_tool(spec, loading_context)
 
@@ -75,12 +487,13 @@ class OSCARPathMapper(PathMapper):
 class OSCARExecutor:
     """Modular executor interface for OSCAR command execution."""
     
-    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, service_name):
+    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_manager=None):
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
         self.oscar_username = oscar_username
         self.oscar_password = oscar_password
-        self.service_name = service_name
+        self.mount_path = mount_path
+        self.service_manager = service_manager
         self.client = None
         self.service_config = None
         
@@ -214,7 +627,8 @@ class OSCARExecutor:
         
         # Upload the input file
         try:
-            storage_service.upload_file(in_provider, local_file_path, in_path)
+            with suppress_stdout_to_stderr():
+                storage_service.upload_file(in_provider, local_file_path, in_path)
         except Exception as e:
             log.error("Upload failed: %s", e)
             return None
@@ -225,7 +639,8 @@ class OSCARExecutor:
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
             try:
-                files = storage_service.list_files_from_path(out_provider, expected_output_path)
+                with suppress_stdout_to_stderr():
+                    files = storage_service.list_files_from_path(out_provider, expected_output_path)
                 
                 if 'Contents' in files:
                     for file_entry in files['Contents']:
@@ -269,7 +684,8 @@ class OSCARExecutor:
             log.debug("Downloading %s...", filename)
             
             # Download using correct parameter order: provider, local_directory, remote_path
-            storage_service.download_file(out_provider, temp_dir, full_remote_path)
+            with suppress_stdout_to_stderr():
+                storage_service.download_file(out_provider, temp_dir, full_remote_path)
             
             # Find downloaded file
             possible_paths = [
@@ -299,7 +715,7 @@ class OSCARExecutor:
             return False
 
         
-    def execute_command(self, command, environment, working_directory, job_name, stdout_file=None):
+    def execute_command(self, command, environment, working_directory, job_name, tool_spec=None, stdout_file=None, job_id=None):
         """
         Execute a command using OSCAR service via file upload/download and return the exit code.
         
@@ -308,7 +724,9 @@ class OSCARExecutor:
             environment: Dictionary of environment variables
             working_directory: Directory to execute the command in
             job_name: Name of the job (for logging)
+            tool_spec: CommandLineTool specification for dynamic service selection
             stdout_file: Optional stdout redirection file
+            job_id: Optional job ID to use (if not provided, one will be generated)
             
         Returns:
             Exit code of the command (0 for success, non-zero for failure)
@@ -317,6 +735,20 @@ class OSCARExecutor:
         log.debug("[job %s] Working directory: %s", job_name, working_directory)
         log.debug("[job %s] Environment variables: %s", job_name, environment)
         
+        # Determine service name dynamically
+        if self.service_manager and tool_spec:
+            log.debug("OSCARExecutor: [job %s] Using service manager to determine service for tool", job_name)
+            service_name = self.service_manager.get_or_create_service(tool_spec)
+            log.info("OSCARExecutor: [job %s] Service manager selected service: %s", job_name, service_name)
+        else:
+            # Fall back to default service
+            service_name = "run-script-event2"
+            log.warning("OSCARExecutor: [job %s] No service manager or tool spec, using default service: %s", job_name, service_name)
+        
+        # Temporarily set service_name for this execution
+        original_service_name = getattr(self, 'service_name', None)
+        self.service_name = service_name
+        
         script_path = None
         output_path = None
         
@@ -324,8 +756,11 @@ class OSCARExecutor:
             # Create a temporary directory for scripts
             temp_dir = tempfile.mkdtemp(prefix="cwl_oscar_")
             
-            # Create command script file with job-specific ID
-            job_id = f"{job_name}_{int(time.time())}"
+            # Use provided job_id or create command script file with job-specific ID
+            if job_id is None:
+                job_id = f"{job_name}_{int(time.time())}"
+            
+            log.debug("[job %s] Using job_id: %s", job_name, job_id)
             script_path = self.create_command_script(
                 command, environment, working_directory, stdout_file=stdout_file, output_dir=temp_dir, job_id=job_id
             )
@@ -352,9 +787,17 @@ class OSCARExecutor:
                 with open(output_path, 'r') as f:
                     output_content = f.read().strip()
                 
+                log.debug("[job %s] Exit code file content: '%s' (length: %d)", job_name, repr(output_content), len(output_content))
+                log.debug("[job %s] Exit code isdigit(): %s", job_name, output_content.isdigit())
+                
                 # The output file should contain the exit code
                 # For OSCAR script execution, it typically contains the exit code
-                exit_code = int(output_content) if output_content.isdigit() else 0
+                if output_content.isdigit():
+                    exit_code = int(output_content)
+                    log.debug("[job %s] Parsed exit code as integer: %d", job_name, exit_code)
+                else:
+                    log.warning("[job %s] Exit code content is not a digit, defaulting to 0. Content: '%s'", job_name, repr(output_content))
+                    exit_code = 0
                 
                 if exit_code == 0:
                     log.info("[job %s] OSCAR job completed successfully", job_name)
@@ -376,6 +819,9 @@ class OSCARExecutor:
             return 1
             
         finally:
+            # Restore original service_name
+            if original_service_name:
+                self.service_name = original_service_name
             # Clean up temporary files
             try:
                 if script_path and os.path.exists(script_path):
@@ -394,7 +840,8 @@ class OSCARTask(JobBase):
     """OSCAR-specific task implementation."""
     
     def __init__(self, builder, joborder, make_path_mapper, requirements, hints, name,
-                 oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, runtime_context):
+                 oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, runtime_context,
+                 tool_spec=None, service_manager=None):
         super(OSCARTask, self).__init__(builder, joborder, make_path_mapper, requirements, hints, name)
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
@@ -403,9 +850,11 @@ class OSCARTask(JobBase):
         self.mount_path = mount_path
         self.service_name = service_name
         self.runtime_context = runtime_context
+        self.tool_spec = tool_spec # Store tool specification
+        self.service_manager = service_manager # Store service manager
         
         # Create OSCAR executor
-        self.executor = OSCARExecutor(oscar_endpoint, oscar_token, oscar_username, oscar_password, service_name)
+        self.executor = OSCARExecutor(oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, self.service_manager)
         
     def run(self, runtimeContext, tmpdir_lock=None):
         """Execute the job using OSCAR with run-specific workspace."""
@@ -414,6 +863,7 @@ class OSCARTask(JobBase):
             
             # Generate job ID for this run
             job_id = f"{self.name}_{int(time.time())}"
+            log.debug("[job %s] Generated job_id: %s", self.name, job_id)
             
             # Build the command line
             cmd = self.build_command_line()
@@ -432,7 +882,9 @@ class OSCARTask(JobBase):
                 environment=env,
                 working_directory=workdir,
                 job_name=self.name,
-                stdout_file=stdout_file
+                tool_spec=self.tool_spec,  # Pass tool specification for dynamic service selection
+                stdout_file=stdout_file,
+                job_id=job_id  # Pass the job_id to ensure consistency
             )
             
             # Determine process status
@@ -447,7 +899,7 @@ class OSCARTask(JobBase):
             try:
                 # Outputs are now copied to mount_path/job_id by the script
                 output_dir = os.path.join(self.mount_path, job_id)
-                log.info("[job %s] Looking for outputs in: %s", self.name, output_dir)
+                log.info("[job %s] Looking for outputs in: %s (job_id: %s)", self.name, output_dir, job_id)
                 
                 # Check if output directory exists
                 if os.path.exists(output_dir):
@@ -563,27 +1015,34 @@ class OSCARCommandLineTool(CommandLineTool):
         self.mount_path = mount_path
         self.service_name = service_name
         
+        # Create service manager for dynamic service creation
+        self.service_manager = OSCARServiceManager(
+            oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path
+        )
+        
     def make_path_mapper(self, reffiles, stagedir, runtimeContext, separateDirs):
         """Create a path mapper for OSCAR execution."""
         return OSCARPathMapper(
             reffiles, runtimeContext.basedir, stagedir, separateDirs, mount_path=self.mount_path)
             
     def make_job_runner(self, runtimeContext):
-        """Create a job runner for OSCAR execution."""
-        def job_runner(builder, joborder, make_path_mapper, requirements, hints, name):
+        """Create an OSCAR job runner."""
+        def create_oscar_task(builder, joborder, make_path_mapper, requirements, hints, name):
             return OSCARTask(
-                builder=builder,
-                joborder=joborder,
-                make_path_mapper=make_path_mapper,
-                requirements=requirements,
-                hints=hints,
-                name=name,
-                oscar_endpoint=self.oscar_endpoint,
-                oscar_token=self.oscar_token,
-                oscar_username=self.oscar_username,
-                oscar_password=self.oscar_password,
-                mount_path=self.mount_path,
-                service_name=self.service_name,
-                runtime_context=runtimeContext
+                builder,
+                joborder,
+                make_path_mapper,
+                requirements,
+                hints,
+                name,
+                self.oscar_endpoint,
+                self.oscar_token,
+                self.oscar_username,
+                self.oscar_password,
+                self.mount_path,
+                self.service_name,
+                runtimeContext,
+                tool_spec=self.tool,  # Pass tool specification
+                service_manager=self.service_manager  # Pass service manager
             )
-        return job_runner 
+        return create_oscar_task 

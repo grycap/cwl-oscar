@@ -23,7 +23,8 @@ from .__init__ import __version__
 
 log = logging.getLogger("oscar-backend")
 log.setLevel(logging.INFO)
-console = logging.StreamHandler()
+# Always use stderr for logging to keep stdout clean for JSON output
+console = logging.StreamHandler(sys.stderr)
 log.addHandler(console)
 
 DEFAULT_TMP_PREFIX = "tmp"
@@ -54,28 +55,31 @@ def main(args=None):
         return 0
 
     if parsed_args.oscar_endpoint is None:
-        print(versionstring())
-        parser.print_usage()
-        print("cwl-oscar: error: argument --oscar-endpoint is required")
+        print(versionstring(), file=sys.stderr)
+        parser.print_usage(sys.stderr)
+        print("cwl-oscar: error: argument --oscar-endpoint is required", file=sys.stderr)
         return 1
 
     # Check authentication parameters
     if parsed_args.oscar_token is None and parsed_args.oscar_username is None:
-        print(versionstring())
-        parser.print_usage()
-        print("cwl-oscar: error: either --oscar-token or --oscar-username is required")
+        print(versionstring(), file=sys.stderr)
+        parser.print_usage(sys.stderr)
+        print("cwl-oscar: error: either --oscar-token or --oscar-username is required", file=sys.stderr)
         return 1
     
     if parsed_args.oscar_username is not None and parsed_args.oscar_password is None:
-        print(versionstring())
-        parser.print_usage()
-        print("cwl-oscar: error: --oscar-password is required when using --oscar-username")
+        print(versionstring(), file=sys.stderr)
+        parser.print_usage(sys.stderr)
+        print("cwl-oscar: error: --oscar-password is required when using --oscar-username", file=sys.stderr)
         return 1
 
-    if parsed_args.quiet:
-        log.setLevel(logging.WARN)
-    if parsed_args.debug:
+    # Configure logging levels based on existing quiet/debug options
+    if hasattr(parsed_args, 'quiet') and parsed_args.quiet:
+        log.setLevel(logging.WARNING)
+    elif hasattr(parsed_args, 'debug') and parsed_args.debug:
         log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.INFO)
 
     def signal_handler(*args):  # pylint: disable=unused-argument
         """setup signal handler"""
@@ -331,6 +335,8 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
         "--version",
         action="store_true",
         help="Print version and exit")
+
+
 
     parser.add_argument(
         "workflow",
