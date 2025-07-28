@@ -52,7 +52,7 @@ def suppress_stdout_to_stderr():
 class OSCARServiceManager:
     """Manages dynamic OSCAR service creation based on CommandLineTool requirements."""
     
-    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path):
+    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, ssl=True):
         log.debug("OSCARServiceManager: Initializing service manager")
         log.debug("OSCARServiceManager: OSCAR endpoint: %s", oscar_endpoint)
         log.debug("OSCARServiceManager: Mount path: %s", mount_path)
@@ -64,6 +64,7 @@ class OSCARServiceManager:
         self.oscar_username = oscar_username
         self.oscar_password = oscar_password
         self.mount_path = mount_path
+        self.ssl = ssl
         self.client = None
         self._service_cache = {}  # Cache created services
         
@@ -81,7 +82,7 @@ class OSCARServiceManager:
                     'cluster_id': 'oscar-cluster',
                     'endpoint': self.oscar_endpoint,
                     'oidc_token': self.oscar_token,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
             else:
                 # Use basic username/password authentication
@@ -91,7 +92,7 @@ class OSCARServiceManager:
                     'endpoint': self.oscar_endpoint,
                     'user': self.oscar_username,
                     'password': self.oscar_password,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
             
             log.debug("OSCARServiceManager: Client options: %s", {k: '***' if k in ['oidc_token', 'password'] else v for k, v in options.items()})
@@ -442,11 +443,11 @@ exit $exit_code
         return "run-script-event2"
 
 
-def make_oscar_tool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name):
+def make_oscar_tool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, ssl=True):
     """cwl-oscar specific factory for CWL Process generation."""
     if "class" in spec and spec["class"] == "CommandLineTool":
         # Pass None as service_name since it will be determined dynamically
-        return OSCARCommandLineTool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, None)
+        return OSCARCommandLineTool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, None, ssl)
     else:
         return default_make_tool(spec, loading_context)
 
@@ -487,13 +488,14 @@ class OSCARPathMapper(PathMapper):
 class OSCARExecutor:
     """Modular executor interface for OSCAR command execution."""
     
-    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_manager=None):
+    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_manager=None, ssl=True):
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
         self.oscar_username = oscar_username
         self.oscar_password = oscar_password
         self.mount_path = mount_path
         self.service_manager = service_manager
+        self.ssl = ssl
         self.client = None
         self.service_config = None
         
@@ -507,7 +509,7 @@ class OSCARExecutor:
                     'cluster_id': 'oscar-cluster',
                     'endpoint': self.oscar_endpoint,
                     'oidc_token': self.oscar_token,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
                 log.debug("Using OIDC token authentication for OSCAR client")
             elif self.oscar_username and self.oscar_password:
@@ -517,7 +519,7 @@ class OSCARExecutor:
                     'endpoint': self.oscar_endpoint,
                     'user': self.oscar_username,
                     'password': self.oscar_password,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
                 log.debug("Using username/password authentication for OSCAR client")
             else:
@@ -841,7 +843,7 @@ class OSCARTask(JobBase):
     
     def __init__(self, builder, joborder, make_path_mapper, requirements, hints, name,
                  oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, runtime_context,
-                 tool_spec=None, service_manager=None):
+                 tool_spec=None, service_manager=None, ssl=True):
         super(OSCARTask, self).__init__(builder, joborder, make_path_mapper, requirements, hints, name)
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
@@ -852,9 +854,10 @@ class OSCARTask(JobBase):
         self.runtime_context = runtime_context
         self.tool_spec = tool_spec # Store tool specification
         self.service_manager = service_manager # Store service manager
+        self.ssl = ssl
         
         # Create OSCAR executor
-        self.executor = OSCARExecutor(oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, self.service_manager)
+        self.executor = OSCARExecutor(oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, self.service_manager, ssl)
         
     def run(self, runtimeContext, tmpdir_lock=None):
         """Execute the job using OSCAR with run-specific workspace."""
@@ -1006,7 +1009,7 @@ class OSCARTask(JobBase):
 class OSCARCommandLineTool(CommandLineTool):
     """OSCAR-specific CommandLineTool implementation."""
     
-    def __init__(self, toolpath_object, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name):
+    def __init__(self, toolpath_object, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, ssl=True):
         super(OSCARCommandLineTool, self).__init__(toolpath_object, loading_context)
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
@@ -1014,10 +1017,11 @@ class OSCARCommandLineTool(CommandLineTool):
         self.oscar_password = oscar_password
         self.mount_path = mount_path
         self.service_name = service_name
+        self.ssl = ssl
         
         # Create service manager for dynamic service creation
         self.service_manager = OSCARServiceManager(
-            oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path
+            oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, ssl
         )
         
     def make_path_mapper(self, reffiles, stagedir, runtimeContext, separateDirs):
@@ -1043,6 +1047,7 @@ class OSCARCommandLineTool(CommandLineTool):
                 self.service_name,
                 runtimeContext,
                 tool_spec=self.tool,  # Pass tool specification
-                service_manager=self.service_manager  # Pass service manager
+                service_manager=self.service_manager,  # Pass service manager
+                ssl=self.ssl  # Pass SSL configuration
             )
         return create_oscar_task 

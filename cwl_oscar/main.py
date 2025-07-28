@@ -97,7 +97,8 @@ def main(args=None):
         oscar_username=parsed_args.oscar_username,
         oscar_password=parsed_args.oscar_password,
         mount_path=parsed_args.mount_path,
-        service_name=parsed_args.service_name
+        service_name=parsed_args.service_name,
+        ssl=not parsed_args.disable_ssl
     )
     
     runtime_context = cwltool.main.RuntimeContext(vars(parsed_args))
@@ -178,6 +179,10 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     parser.add_argument("--service-name", type=str,
                         default="run-script-event2",
                         help="OSCAR service name to use for execution")
+    
+    parser.add_argument("--disable-ssl", 
+                        action="store_true",
+                        help="Disable verification of SSL certificates for the cluster service")
     
     # Standard cwltool arguments
     parser.add_argument("--basedir", type=Text)

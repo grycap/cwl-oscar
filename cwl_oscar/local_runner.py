@@ -28,7 +28,7 @@ class OSCARLocalRunner:
     """Local runner for CWL workflows on OSCAR infrastructure."""
     
     def __init__(self, oscar_endpoint, oscar_token=None, oscar_username=None, oscar_password=None, 
-                 mount_path="/mnt/cwl-oscar4/mount", cwl_oscar_service="cwl-oscar4"):
+                 mount_path="/mnt/cwl-oscar4/mount", cwl_oscar_service="cwl-oscar4", ssl=True):
         """
         Initialize the local runner.
         
@@ -39,6 +39,7 @@ class OSCARLocalRunner:
             oscar_password: OSCAR password for basic authentication
             mount_path: Mount path for shared data
             cwl_oscar_service: Name of the cwl-oscar service
+            ssl: Enable SSL/TLS for OSCAR communication (default: True)
         """
         self.oscar_endpoint = oscar_endpoint
         self.oscar_token = oscar_token
@@ -46,6 +47,7 @@ class OSCARLocalRunner:
         self.oscar_password = oscar_password
         self.mount_path = mount_path
         self.cwl_oscar_service = cwl_oscar_service
+        self.ssl = ssl
         self.client = None
         self.storage_service = None
         
@@ -58,7 +60,7 @@ class OSCARLocalRunner:
                     'cluster_id': 'oscar-cluster',
                     'endpoint': self.oscar_endpoint,
                     'oidc_token': self.oscar_token,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
             else:
                 # Use basic username/password authentication
@@ -67,7 +69,7 @@ class OSCARLocalRunner:
                     'endpoint': self.oscar_endpoint,
                     'user': self.oscar_username,
                     'password': self.oscar_password,
-                    'ssl': 'True'
+                    'ssl': str(self.ssl)
                 }
             
             self.client = Client(options=options)
@@ -539,6 +541,7 @@ def main():
     parser.add_argument('--timeout', type=int, default=600, help='Timeout in seconds')
     parser.add_argument('--additional-files', nargs='*', help='Additional files to upload')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--disable-ssl', action='store_true', help='Disable verification of SSL certificates for the cluster service')
     
     args = parser.parse_args()
     
@@ -553,7 +556,8 @@ def main():
         oscar_username=args.oscar_username,
         oscar_password=args.oscar_password,
         mount_path=args.mount_path,
-        cwl_oscar_service=args.service_name
+        cwl_oscar_service=args.service_name,
+        ssl=not args.disable_ssl
     )
     
     # Run workflow
