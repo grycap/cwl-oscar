@@ -172,37 +172,17 @@ class OSCARServiceManager:
         log.debug("OSCARServiceManager: Final extracted requirements: %s", requirements)
         return requirements
         
-    def generate_service_name(self, tool_spec, requirements):
+    def generate_service_name(self, tool_spec, requirements, job_name=None):
         """Generate a unique service name based on tool and requirements."""
         log.debug("OSCARServiceManager: Generating service name for tool")
         
-        # Create a meaningful tool ID, avoiding file paths
-        tool_id = tool_spec.get('id', '')
-        log.debug("OSCARServiceManager: Original tool ID: '%s'", tool_id)
-        
-        if not tool_id:
-            # Use baseCommand if no id
-            base_cmd = tool_spec.get('baseCommand', 'unknown')
-            log.debug("OSCARServiceManager: No tool ID, using baseCommand: %s", base_cmd)
-            if isinstance(base_cmd, list):
-                tool_id = '-'.join(str(x) for x in base_cmd[:2])  # First two commands
-                log.debug("OSCARServiceManager: Generated tool ID from list baseCommand: '%s'", tool_id)
-            else:
-                tool_id = str(base_cmd)
-                log.debug("OSCARServiceManager: Generated tool ID from string baseCommand: '%s'", tool_id)
-        
-        # Clean up file:// URLs and paths to get just the tool name
-        if tool_id.startswith('file://'):
-            # Extract just the filename without path and extension
-            import os
-            old_tool_id = tool_id
-            tool_id = os.path.splitext(os.path.basename(tool_id))[0]
-            log.debug("OSCARServiceManager: Cleaned file:// URL from '%s' to '%s'", old_tool_id, tool_id)
-        elif '/' in tool_id:
-            # Extract just the last part of the path
-            old_tool_id = tool_id
-            tool_id = tool_id.split('/')[-1]
-            log.debug("OSCARServiceManager: Extracted filename from path '%s' to '%s'", old_tool_id, tool_id)
+                # Use job_name if provided, otherwise use "tool"
+        if job_name:
+            tool_id = job_name
+            log.debug("OSCARServiceManager: Using provided job_name as tool ID: '%s'", tool_id)
+        else:
+            tool_id = "tool"
+            log.debug("OSCARServiceManager: No job_name provided, using default tool ID: '%s'", tool_id)
             
         # Create a hash based on tool content and requirements
         tool_content = json.dumps({
@@ -215,18 +195,28 @@ class OSCARServiceManager:
         service_hash = hashlib.md5(tool_content.encode()).hexdigest()[:8]
         log.debug("OSCARServiceManager: Generated service hash: %s", service_hash)
         
-        # Clean tool ID for service name
-        clean_id = ''.join(c for c in tool_id if c.isalnum() or c in '-_').lower()
-        clean_id = clean_id[:15]  # Shorter limit
-        log.debug("OSCARServiceManager: Cleaned tool ID: '%s' -> '%s'", tool_id, clean_id)
+        # Use tool_id directly without cleaning
+        if not tool_id:
+            tool_id = 'tool'
+            log.debug("OSCARServiceManager: Empty tool ID, using default: '%s'", tool_id)
         
-        if not clean_id:
-            clean_id = 'tool'
-            log.debug("OSCARServiceManager: Empty clean ID, using default: '%s'", clean_id)
+        # Ensure the service name follows Kubernetes naming rules (RFC 1123 subdomain)
+        # Replace underscores with hyphens and ensure only lowercase alphanumeric + hyphens
+        clean_tool_id = tool_id.lower().replace('_', '-')
+        # Remove any other invalid characters, keep only a-z, 0-9, and hyphens
+        import re
+        clean_tool_id = re.sub(r'[^a-z0-9-]', '', clean_tool_id)
+        # Ensure it doesn't start or end with a hyphen
+        clean_tool_id = clean_tool_id.strip('-')
+        # Ensure it's not empty
+        if not clean_tool_id:
+            clean_tool_id = 'tool'
         
-        final_service_name = f"clt-{clean_id}-{service_hash}"
+        final_service_name = f"clt-{clean_tool_id}-{service_hash}"
         log.debug("OSCARServiceManager: Final generated service name: '%s'", final_service_name)
         return final_service_name
+        
+
         
     def create_service_definition(self, service_name, requirements, mount_path, shared_minio_config=None):
         """Create OSCAR service definition."""
@@ -309,34 +299,28 @@ exit $exit_code
         log.debug("OSCARServiceManager: Using embedded script content (%d characters)", len(script_content))
         
         service_def = {
-            'functions': {
-                'oscar': [{
-                    'grnet': {
-                        'name': service_name,
-                        'memory': requirements['memory'],
-                        'cpu': requirements['cpu'],
-                        'image': requirements['image'],
-                        'script': script_content,
-                        'environment': {
-                            'variables': {
-                                'MOUNT_PATH': mount_path,
-                                **requirements['environment']
-                            }
-                        },
-                        'input': [{
-                            'storage_provider': 'minio.default',
-                            'path': f'{service_name}/in'
-                        }],
-                        'output': [{
-                            'storage_provider': 'minio.default', 
-                            'path': f'{service_name}/out'
-                        }],
-                        'mount': {
-                            'storage_provider': 'minio.default',
-                            'path': f'/{mount_base}'
-                        }
-                    }
-                }]
+            'name': service_name,
+            'memory': requirements['memory'],
+            'cpu': requirements['cpu'],
+            'image': requirements['image'],
+            'script': script_content,
+            'environment': {
+                'variables': {
+                    'MOUNT_PATH': mount_path,
+                    **requirements['environment']
+                }
+            },
+            'input': [{
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/in'
+            }],
+            'output': [{
+                'storage_provider': 'minio.default', 
+                'path': f'{service_name}/out'
+            }],
+            'mount': {
+                'storage_provider': 'minio.default',
+                'path': f'/{mount_base}'
             }
         }
         
@@ -346,28 +330,26 @@ exit $exit_code
                 "minio": {
                     "shared": {
                         "endpoint": shared_minio_config["endpoint"],
-                        "verify": shared_minio_config["verify_ssl"],
+                        "verify": shared_minio_config.get("verify_ssl", False),
                         "access_key": shared_minio_config["access_key"],
                         "secret_key": shared_minio_config["secret_key"],
-                        "region": shared_minio_config.get("region", "us-east-1")  # Default to us-east-1 if not specified
+                        "region": shared_minio_config.get("region") or "us-east-1"  # Default to us-east-1 if region is None/null
                     }
                 }
             }
             
-            # Update input/output/mount to use shared MinIO
-            service_def["functions"]["oscar"][0]["grnet"]["input"][0]["storage_provider"] = "minio.shared"
-            service_def["functions"]["oscar"][0]["grnet"]["output"][0]["storage_provider"] = "minio.shared"
-            service_def["functions"]["oscar"][0]["grnet"]["mount"]["storage_provider"] = "minio.shared"
+            # Update only mount to use shared MinIO, keep input/output as minio.default
+            service_def["mount"]["storage_provider"] = "minio.shared"
         
         log.debug("OSCARServiceManager: Created service definition: %s", json.dumps(service_def, indent=2))
         return service_def
         
-    def get_or_create_service(self, tool_spec):
+    def get_or_create_service(self, tool_spec, job_name=None):
         """Get existing service or create new one for the CommandLineTool."""
         log.debug("OSCARServiceManager: Starting get_or_create_service for tool: %s", tool_spec.get('id', 'unknown'))
         
         requirements = self.extract_service_requirements(tool_spec)
-        service_name = self.generate_service_name(tool_spec, requirements)
+        service_name = self.generate_service_name(tool_spec, requirements, job_name)
         
         log.info("OSCARServiceManager: Generated service name '%s' for tool '%s'", service_name, tool_spec.get('id', 'unknown'))
         
@@ -426,12 +408,12 @@ exit $exit_code
             log.info("OSCARServiceManager: Attempt %d/%d to create service %s", attempt, max_retries, service_name)
             
             try:
-                # Create service using OSCAR API - pass just the service definition
-                inner_service_def = service_def['functions']['oscar'][0]['grnet']
+                # Create service using OSCAR API - pass the complete service definition including storage_providers
+                # According to OSCAR API spec, we need the full service definition, not just the inner grnet part
                 log.debug("OSCARServiceManager: Sending service creation request to OSCAR API")
-                log.debug("OSCARServiceManager: Service definition to create: %s", json.dumps(inner_service_def, indent=2))
+                log.debug("OSCARServiceManager: Complete service definition to create: %s", json.dumps(service_def, indent=2))
                 
-                response = client.create_service(inner_service_def)
+                response = client.create_service(service_def)
                 log.debug("OSCARServiceManager: Service creation response status: %d", response.status_code)
                 log.debug("OSCARServiceManager: Service creation response text: %s", response.text)
                 
@@ -452,11 +434,20 @@ exit $exit_code
                     self._service_cache[service_name] = service_def
                     return service_name
                 else:
+                    # Include response text in error message for better debugging
+                    error_msg = f"HTTP {response.status_code}"
+                    if response.text:
+                        error_msg += f": {response.text}"
                     log.error("OSCARServiceManager: Failed to create service %s (status %d): %s", service_name, response.status_code, response.text)
+                    log.error("OSCARServiceManager: Service creation failed with error: %s", error_msg)
                     
             except Exception as e:
                 last_exception = e
-                log.error("OSCARServiceManager: Error creating service %s (attempt %d/%d): %s", service_name, attempt, max_retries, e)
+                # Try to extract more details from the exception if it's an HTTP error
+                error_details = str(e)
+                if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                    error_details += f" - Response: {e.response.text}"
+                log.error("OSCARServiceManager: Error creating service %s (attempt %d/%d): %s", service_name, attempt, max_retries, error_details)
                 
                 # Check if service exists despite exception
                 log.debug("OSCARServiceManager: Checking if service exists despite exception")
@@ -774,7 +765,7 @@ class OSCARExecutor:
         # Determine service name dynamically
         if self.service_manager and tool_spec:
             log.debug("OSCARExecutor: [job %s] Using service manager to determine service for tool", job_name)
-            service_name = self.service_manager.get_or_create_service(tool_spec)
+            service_name = self.service_manager.get_or_create_service(tool_spec, job_name)
             log.info("OSCARExecutor: [job %s] Service manager selected service: %s", job_name, service_name)
         else:
             # Fall back to default service
