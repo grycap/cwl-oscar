@@ -52,7 +52,7 @@ def suppress_stdout_to_stderr():
 class OSCARServiceManager:
     """Manages dynamic OSCAR service creation based on CommandLineTool requirements."""
     
-    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, ssl=True):
+    def __init__(self, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, ssl=True, shared_minio_config=None):
         log.debug("OSCARServiceManager: Initializing service manager")
         log.debug("OSCARServiceManager: OSCAR endpoint: %s", oscar_endpoint)
         log.debug("OSCARServiceManager: Mount path: %s", mount_path)
@@ -67,6 +67,7 @@ class OSCARServiceManager:
         self.ssl = ssl
         self.client = None
         self._service_cache = {}  # Cache created services
+        self.shared_minio_config = shared_minio_config
         
         log.debug("OSCARServiceManager: Service manager initialized successfully")
         
@@ -227,7 +228,7 @@ class OSCARServiceManager:
         log.debug("OSCARServiceManager: Final generated service name: '%s'", final_service_name)
         return final_service_name
         
-    def create_service_definition(self, service_name, requirements, mount_path):
+    def create_service_definition(self, service_name, requirements, mount_path, shared_minio_config=None):
         """Create OSCAR service definition."""
         log.debug("OSCARServiceManager: Creating service definition for service: %s", service_name)
         log.debug("OSCARServiceManager: Requirements: %s", requirements)
@@ -339,6 +340,25 @@ exit $exit_code
             }
         }
         
+        # Add storage_providers if shared MinIO is configured
+        if shared_minio_config:
+            service_def["storage_providers"] = {
+                "minio": {
+                    "shared": {
+                        "endpoint": shared_minio_config["endpoint"],
+                        "verify": shared_minio_config["verify_ssl"],
+                        "access_key": shared_minio_config["access_key"],
+                        "secret_key": shared_minio_config["secret_key"],
+                        "region": shared_minio_config.get("region", "us-east-1")  # Default to us-east-1 if not specified
+                    }
+                }
+            }
+            
+            # Update input/output/mount to use shared MinIO
+            service_def["functions"]["oscar"][0]["grnet"]["input"][0]["storage_provider"] = "minio.shared"
+            service_def["functions"]["oscar"][0]["grnet"]["output"][0]["storage_provider"] = "minio.shared"
+            service_def["functions"]["oscar"][0]["grnet"]["mount"]["storage_provider"] = "minio.shared"
+        
         log.debug("OSCARServiceManager: Created service definition: %s", json.dumps(service_def, indent=2))
         return service_def
         
@@ -393,61 +413,75 @@ exit $exit_code
             log.info("OSCARServiceManager: Using existing service: %s", service_name)
             return service_name
             
-        # Create new service
+        # Create new service with retry logic
         log.info("OSCARServiceManager: Creating new service for tool: %s -> %s", tool_spec.get('id', 'unknown'), service_name)
-        service_def = self.create_service_definition(service_name, requirements, self.mount_path)
+        service_def = self.create_service_definition(service_name, requirements, self.mount_path, self.shared_minio_config)
         
-        try:
-            # Create service using OSCAR API - pass just the service definition
-            inner_service_def = service_def['functions']['oscar'][0]['grnet']
-            log.debug("OSCARServiceManager: Sending service creation request to OSCAR API")
-            log.debug("OSCARServiceManager: Service definition to create: %s", json.dumps(inner_service_def, indent=2))
+        max_retries = 3
+        retry_delay = 2  # seconds
+        last_exception = None
+        import time  # Import time at the beginning
+        
+        for attempt in range(1, max_retries + 1):
+            log.info("OSCARServiceManager: Attempt %d/%d to create service %s", attempt, max_retries, service_name)
             
-            response = client.create_service(inner_service_def)
-            log.debug("OSCARServiceManager: Service creation response status: %d", response.status_code)
-            log.debug("OSCARServiceManager: Service creation response text: %s", response.text)
-            
-            # Wait a bit for service setup to complete regardless of response
-            import time
-            log.debug("OSCARServiceManager: Waiting 3 seconds for service setup to complete")
-            time.sleep(3)
-            
-            # Always check if service was created, regardless of API response
-            log.debug("OSCARServiceManager: Verifying service creation by checking if service exists")
-            created_service = check_service_exists(service_name)
-            if created_service:
-                log.info("OSCARServiceManager: Service successfully created and verified: %s", service_name)
-                return service_name
-            
-            if response.status_code in [200, 201]:
-                log.info("OSCARServiceManager: Service creation API succeeded (status %d): %s", response.status_code, service_name)
-                self._service_cache[service_name] = service_def
-                return service_name
-            else:
-                log.error("OSCARServiceManager: Failed to create service %s (status %d): %s", service_name, response.status_code, response.text)
+            try:
+                # Create service using OSCAR API - pass just the service definition
+                inner_service_def = service_def['functions']['oscar'][0]['grnet']
+                log.debug("OSCARServiceManager: Sending service creation request to OSCAR API")
+                log.debug("OSCARServiceManager: Service definition to create: %s", json.dumps(inner_service_def, indent=2))
                 
-        except Exception as e:
-            log.error("OSCARServiceManager: Error creating service %s: %s", service_name, e)
-            
-            # Check one more time if service exists despite exception
-            import time
-            log.debug("OSCARServiceManager: Waiting 2 seconds and checking again after exception")
-            time.sleep(2)
-            created_service = check_service_exists(service_name)
-            if created_service:
-                log.info("OSCARServiceManager: Service exists despite exception: %s", service_name)
-                return service_name
-            
-        # Fall back to default service only as last resort
-        log.warning("OSCARServiceManager: Falling back to default service 'run-script-event2'")
-        return "run-script-event2"
+                response = client.create_service(inner_service_def)
+                log.debug("OSCARServiceManager: Service creation response status: %d", response.status_code)
+                log.debug("OSCARServiceManager: Service creation response text: %s", response.text)
+                
+                # Wait a bit for service setup to complete regardless of response
+                log.debug("OSCARServiceManager: Waiting 3 seconds for service setup to complete")
+                time.sleep(3)
+                
+                # Always check if service was created, regardless of API response
+                log.debug("OSCARServiceManager: Verifying service creation by checking if service exists")
+                created_service = check_service_exists(service_name)
+                if created_service:
+                    log.info("OSCARServiceManager: Service successfully created and verified: %s", service_name)
+                    self._service_cache[service_name] = service_def
+                    return service_name
+                
+                if response.status_code in [200, 201]:
+                    log.info("OSCARServiceManager: Service creation API succeeded (status %d): %s", response.status_code, service_name)
+                    self._service_cache[service_name] = service_def
+                    return service_name
+                else:
+                    log.error("OSCARServiceManager: Failed to create service %s (status %d): %s", service_name, response.status_code, response.text)
+                    
+            except Exception as e:
+                last_exception = e
+                log.error("OSCARServiceManager: Error creating service %s (attempt %d/%d): %s", service_name, attempt, max_retries, e)
+                
+                # Check if service exists despite exception
+                log.debug("OSCARServiceManager: Checking if service exists despite exception")
+                created_service = check_service_exists(service_name)
+                if created_service:
+                    log.info("OSCARServiceManager: Service exists despite exception: %s", service_name)
+                    self._service_cache[service_name] = service_def
+                    return service_name
+                
+                # If this isn't the last attempt, wait before retrying
+                if attempt < max_retries:
+                    log.debug("OSCARServiceManager: Waiting %d seconds before retry", retry_delay)
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+        
+        # If we get here, all retries failed - raise an exception instead of falling back
+        log.error("OSCARServiceManager: Failed to create service %s after %d retry attempts", service_name, max_retries)
+        raise RuntimeError(f"Failed to create OSCAR service '{service_name}' after {max_retries} attempts. Last error: {last_exception}")
 
 
-def make_oscar_tool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, ssl=True):
+def make_oscar_tool(spec, loading_context, cluster_manager, mount_path, service_name, shared_minio_config=None):
     """cwl-oscar specific factory for CWL Process generation."""
     if "class" in spec and spec["class"] == "CommandLineTool":
         # Pass None as service_name since it will be determined dynamically
-        return OSCARCommandLineTool(spec, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, None, ssl)
+        return OSCARCommandLineTool(spec, loading_context, cluster_manager, mount_path, None, shared_minio_config)
     else:
         return default_make_tool(spec, loading_context)
 
@@ -842,22 +876,17 @@ class OSCARTask(JobBase):
     """OSCAR-specific task implementation."""
     
     def __init__(self, builder, joborder, make_path_mapper, requirements, hints, name,
-                 oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, runtime_context,
-                 tool_spec=None, service_manager=None, ssl=True):
+                 cluster_manager, mount_path, service_name, runtime_context,
+                 tool_spec=None, shared_minio_config=None):
         super(OSCARTask, self).__init__(builder, joborder, make_path_mapper, requirements, hints, name)
-        self.oscar_endpoint = oscar_endpoint
-        self.oscar_token = oscar_token
-        self.oscar_username = oscar_username
-        self.oscar_password = oscar_password
+        self.cluster_manager = cluster_manager
         self.mount_path = mount_path
         self.service_name = service_name
         self.runtime_context = runtime_context
         self.tool_spec = tool_spec # Store tool specification
-        self.service_manager = service_manager # Store service manager
-        self.ssl = ssl
+        self.shared_minio_config = shared_minio_config
         
-        # Create OSCAR executor
-        self.executor = OSCARExecutor(oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, self.service_manager, ssl)
+        # We'll create executors dynamically for each cluster as needed
         
     def run(self, runtimeContext, tmpdir_lock=None):
         """Execute the job using OSCAR with run-specific workspace."""
@@ -877,10 +906,38 @@ class OSCARTask(JobBase):
             # Set working directory - the command script will create its own run-specific directory
             workdir = self.mount_path
             
+            # Get the next available cluster using round-robin scheduling
+            cluster_config = self.cluster_manager.get_next_cluster()
+            if not cluster_config:
+                raise RuntimeError("No available clusters for task execution")
+            
+            log.info("[job %s] Executing on cluster: %s", self.name, cluster_config.name)
+            
+            # Create service manager and executor for this specific cluster
+            service_manager = OSCARServiceManager(
+                cluster_config.endpoint,
+                cluster_config.token,
+                cluster_config.username,
+                cluster_config.password,
+                self.mount_path,
+                cluster_config.ssl,
+                self.shared_minio_config
+            )
+            
+            executor = OSCARExecutor(
+                cluster_config.endpoint,
+                cluster_config.token,
+                cluster_config.username,
+                cluster_config.password,
+                self.mount_path,
+                service_manager,
+                cluster_config.ssl
+            )
+            
             # Execute the command using OSCAR
             stdout_file = getattr(self, 'stdout', None)
             
-            exit_code = self.executor.execute_command(
+            exit_code = executor.execute_command(
                 command=cmd,
                 environment=env,
                 working_directory=workdir,
@@ -1009,20 +1066,14 @@ class OSCARTask(JobBase):
 class OSCARCommandLineTool(CommandLineTool):
     """OSCAR-specific CommandLineTool implementation."""
     
-    def __init__(self, toolpath_object, loading_context, oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, service_name, ssl=True):
+    def __init__(self, toolpath_object, loading_context, cluster_manager, mount_path, service_name, shared_minio_config=None):
         super(OSCARCommandLineTool, self).__init__(toolpath_object, loading_context)
-        self.oscar_endpoint = oscar_endpoint
-        self.oscar_token = oscar_token
-        self.oscar_username = oscar_username
-        self.oscar_password = oscar_password
+        self.cluster_manager = cluster_manager
         self.mount_path = mount_path
         self.service_name = service_name
-        self.ssl = ssl
+        self.shared_minio_config = shared_minio_config
         
-        # Create service manager for dynamic service creation
-        self.service_manager = OSCARServiceManager(
-            oscar_endpoint, oscar_token, oscar_username, oscar_password, mount_path, ssl
-        )
+        # We'll create service managers dynamically for each cluster as needed
         
     def make_path_mapper(self, reffiles, stagedir, runtimeContext, separateDirs):
         """Create a path mapper for OSCAR execution."""
@@ -1039,15 +1090,11 @@ class OSCARCommandLineTool(CommandLineTool):
                 requirements,
                 hints,
                 name,
-                self.oscar_endpoint,
-                self.oscar_token,
-                self.oscar_username,
-                self.oscar_password,
+                self.cluster_manager,
                 self.mount_path,
                 self.service_name,
                 runtimeContext,
                 tool_spec=self.tool,  # Pass tool specification
-                service_manager=self.service_manager,  # Pass service manager
-                ssl=self.ssl  # Pass SSL configuration
+                shared_minio_config=self.shared_minio_config
             )
         return create_oscar_task 

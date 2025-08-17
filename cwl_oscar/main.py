@@ -19,6 +19,7 @@ from cwltool.executors import (MultithreadedJobExecutor, SingleJobExecutor,
 from cwltool.process import Process
 
 from .oscar import make_oscar_tool, OSCARPathMapper
+from .cluster_manager import ClusterManager
 from .__init__ import __version__
 
 # Build time constant - update this string as needed
@@ -60,24 +61,180 @@ def main(args=None):
         print(versionstring())
         return 0
 
-    if parsed_args.oscar_endpoint is None:
+    # Initialize cluster manager
+    cluster_manager = ClusterManager()
+    
+    # Handle new multi-cluster arguments
+    if parsed_args.cluster_endpoint:
+        log.info("Processing multi-cluster configuration")
+        
+        endpoint_count = len(parsed_args.cluster_endpoint)
+        
+        # The current argparse approach with action='append' doesn't preserve the relationship
+        # between endpoints and their authentication methods. We need to parse the raw arguments
+        # to understand which authentication method goes with which endpoint.
+        
+        # Get the raw argument list to understand the grouping
+        raw_args = sys.argv[1:] if args is None else args
+        log.debug("Raw arguments: %s", raw_args)
+        
+        # Parse arguments manually to understand the grouping
+        clusters = []
+        current_cluster = None
+        
+        i = 0
+        while i < len(raw_args):
+            arg = raw_args[i]
+            
+            if arg == '--cluster-endpoint':
+                if current_cluster:
+                    clusters.append(current_cluster)
+                current_cluster = {'endpoint': raw_args[i + 1], 'token': None, 'username': None, 'password': None, 'ssl': True}
+                i += 2
+            elif arg == '--cluster-token':
+                if current_cluster:
+                    current_cluster['token'] = raw_args[i + 1]
+                    i += 2
+                else:
+                    print(versionstring(), file=sys.stderr)
+                    parser.print_usage(sys.stderr)
+                    print("cwl-oscar: error: --cluster-token must follow --cluster-endpoint", file=sys.stderr)
+                    return 1
+            elif arg == '--cluster-username':
+                if current_cluster:
+                    current_cluster['username'] = raw_args[i + 1]
+                    i += 2
+                else:
+                    print(versionstring(), file=sys.stderr)
+                    parser.print_usage(sys.stderr)
+                    print("cwl-oscar: error: --cluster-username must follow --cluster-endpoint", file=sys.stderr)
+                    return 1
+            elif arg == '--cluster-password':
+                if current_cluster:
+                    current_cluster['password'] = raw_args[i + 1]
+                    i += 2
+                else:
+                    print(versionstring(), file=sys.stderr)
+                    parser.print_usage(sys.stderr)
+                    print("cwl-oscar: error: --cluster-password must follow --cluster-endpoint", file=sys.stderr)
+                    return 1
+            elif arg == '--cluster-disable-ssl':
+                if current_cluster:
+                    current_cluster['ssl'] = False
+                    i += 1
+                else:
+                    print(versionstring(), file=sys.stderr)
+                    parser.print_usage(sys.stderr)
+                    print("cwl-oscar: error: --cluster-disable-ssl must follow --cluster-endpoint", file=sys.stderr)
+                    return 1
+            elif arg.startswith('--shared-minio') or arg.startswith('--mount-path') or arg.startswith('--outdir') or arg.startswith('--') or not arg.startswith('-'):
+                # Skip non-cluster arguments
+                i += 1
+            else:
+                i += 1
+        
+        # Add the last cluster
+        if current_cluster:
+            clusters.append(current_cluster)
+        
+        log.debug("Parsed clusters: %s", clusters)
+        
+        # Validate and add each cluster
+        for i, cluster in enumerate(clusters):
+            endpoint = cluster['endpoint']
+            token = cluster['token']
+            username = cluster['username']
+            password = cluster['password']
+            ssl = cluster['ssl']
+            
+            # Validate authentication for this cluster
+            if not token and not username:
+                print(versionstring(), file=sys.stderr)
+                parser.print_usage(sys.stderr)
+                print(f"cwl-oscar: error: cluster {i+1} requires either --cluster-token or --cluster-username", file=sys.stderr)
+                return 1
+                
+            if username and not password:
+                print(versionstring(), file=sys.stderr)
+                parser.print_usage(sys.stderr)
+                print(f"cwl-oscar: error: cluster {i+1} needs --cluster-password when using --cluster-username", file=sys.stderr)
+                return 1
+            
+            # Add cluster to manager
+            cluster_manager.add_cluster_from_args(endpoint, token, username, password, ssl)
+            auth_method = "token" if token else "username/password"
+            log.info("Added cluster %d: %s (%s)", i+1, endpoint, auth_method)
+    
+    # Handle legacy single cluster arguments (for backward compatibility)
+    elif parsed_args.oscar_endpoint:
+        log.info("Processing legacy single cluster configuration")
+        ssl = not parsed_args.disable_ssl
+        
+        # Check authentication parameters
+        if parsed_args.oscar_token is None and parsed_args.oscar_username is None:
+            print(versionstring(), file=sys.stderr)
+            parser.print_usage(sys.stderr)
+            print("cwl-oscar: error: either --oscar-token or --oscar-username is required", file=sys.stderr)
+            return 1
+        
+        if parsed_args.oscar_username is not None and parsed_args.oscar_password is None:
+            print(versionstring(), file=sys.stderr)
+            parser.print_usage(sys.stderr)
+            print("cwl-oscar: error: --oscar-password is required when using --oscar-username", file=sys.stderr)
+            return 1
+        
+        # Add legacy cluster to manager
+        cluster_manager.add_cluster_from_args(
+            parsed_args.oscar_endpoint,
+            parsed_args.oscar_token,
+            parsed_args.oscar_username,
+            parsed_args.oscar_password,
+            ssl
+        )
+        log.info("Added legacy cluster: %s", parsed_args.oscar_endpoint)
+    
+    else:
         print(versionstring(), file=sys.stderr)
         parser.print_usage(sys.stderr)
-        print("cwl-oscar: error: argument --oscar-endpoint is required", file=sys.stderr)
-        return 1
-
-    # Check authentication parameters
-    if parsed_args.oscar_token is None and parsed_args.oscar_username is None:
-        print(versionstring(), file=sys.stderr)
-        parser.print_usage(sys.stderr)
-        print("cwl-oscar: error: either --oscar-token or --oscar-username is required", file=sys.stderr)
+        print("cwl-oscar: error: either --cluster-endpoint or --oscar-endpoint is required", file=sys.stderr)
         return 1
     
-    if parsed_args.oscar_username is not None and parsed_args.oscar_password is None:
-        print(versionstring(), file=sys.stderr)
-        parser.print_usage(sys.stderr)
-        print("cwl-oscar: error: --oscar-password is required when using --oscar-username", file=sys.stderr)
+    # Validate cluster configurations
+    if not cluster_manager.validate_clusters():
         return 1
+    
+    # Log cluster information
+    cluster_info = cluster_manager.get_cluster_info()
+    log.info("Configured %d clusters:", len(cluster_info))
+    for info in cluster_info:
+        log.info("  %s: %s (%s)", info['name'], info['endpoint'], info['auth_type'])
+
+    # Check shared MinIO configuration for multi-cluster
+    shared_minio_config = None
+    if len(cluster_info) > 1:
+        # Multi-cluster mode requires shared MinIO bucket
+        if not parsed_args.shared_minio_endpoint:
+            print(versionstring(), file=sys.stderr)
+            parser.print_usage(sys.stderr)
+            print("cwl-oscar: error: --shared-minio-endpoint is required for multi-cluster mode", file=sys.stderr)
+            return 1
+        
+        if not parsed_args.shared_minio_access_key or not parsed_args.shared_minio_secret_key:
+            print(versionstring(), file=sys.stderr)
+            parser.print_usage(sys.stderr)
+            print("cwl-oscar: error: --shared-minio-access-key and --shared-minio-secret-key are required for multi-cluster mode", file=sys.stderr)
+            return 1
+        
+        shared_minio_config = {
+            'endpoint': parsed_args.shared_minio_endpoint,
+            'access_key': parsed_args.shared_minio_access_key,
+            'secret_key': parsed_args.shared_minio_secret_key,
+            'region': parsed_args.shared_minio_region,
+            'verify_ssl': parsed_args.shared_minio_verify_ssl
+        }
+        log.info("Shared MinIO bucket configured: %s", parsed_args.shared_minio_endpoint)
+    else:
+        log.info("Single cluster mode - using default cluster MinIO bucket")
 
     # Configure logging levels based on existing quiet/debug options
     if hasattr(parsed_args, 'quiet') and parsed_args.quiet:
@@ -98,13 +255,10 @@ def main(args=None):
     loading_context = cwltool.main.LoadingContext(vars(parsed_args))
     loading_context.construct_tool_object = functools.partial(
         make_oscar_tool, 
-        oscar_endpoint=parsed_args.oscar_endpoint,
-        oscar_token=parsed_args.oscar_token,
-        oscar_username=parsed_args.oscar_username,
-        oscar_password=parsed_args.oscar_password,
+        cluster_manager=cluster_manager,
         mount_path=parsed_args.mount_path,
         service_name=parsed_args.service_name,
-        ssl=not parsed_args.disable_ssl
+        shared_minio_config=shared_minio_config
     )
     
     runtime_context = cwltool.main.RuntimeContext(vars(parsed_args))
@@ -122,12 +276,10 @@ def main(args=None):
         oscar_execute, 
         job_executor=job_executor,
         loading_context=loading_context,
-        oscar_endpoint=parsed_args.oscar_endpoint,
-        oscar_token=parsed_args.oscar_token,
-        oscar_username=parsed_args.oscar_username,
-        oscar_password=parsed_args.oscar_password,
+        cluster_manager=cluster_manager,
         mount_path=parsed_args.mount_path,
-        service_name=parsed_args.service_name
+        service_name=parsed_args.service_name,
+        shared_minio_config=shared_minio_config
     )
     
     return cwltool.main.main(
@@ -145,12 +297,10 @@ def oscar_execute(process,           # type: Process
                   runtime_context,   # type: RuntimeContext
                   job_executor,      # type: JobExecutor
                   loading_context,   # type: LoadingContext
-                  oscar_endpoint,
-                  oscar_token,
-                  oscar_username,
-                  oscar_password,
+                  cluster_manager,
                   mount_path,
                   service_name,
+                  shared_minio_config,
                   logger=log
                   ):  # type: (...) -> Tuple[Optional[Dict[Text, Any]], Text]
     """Execute using OSCAR backend."""
@@ -164,20 +314,44 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     parser = argparse.ArgumentParser(
         description='OSCAR executor for Common Workflow Language.')
     
-    # OSCAR-specific arguments
+    # Multi-cluster support
+    parser.add_argument("--cluster-endpoint", type=str, action='append',
+                        help="OSCAR cluster endpoint URL (can be specified multiple times for multiple clusters)")
+    parser.add_argument("--cluster-token", type=str, action='append',
+                        help="OSCAR OIDC authentication token for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-username", type=str, action='append',
+                        help="OSCAR username for basic authentication for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-password", type=str, action='append',
+                        help="OSCAR password for basic authentication for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-disable-ssl", action='append', const=True, nargs='?',
+                        help="Disable SSL verification for corresponding cluster (can be specified multiple times)")
+    
+    # Shared MinIO bucket configuration for multi-cluster support
+    parser.add_argument("--shared-minio-endpoint", type=str,
+                        help="Shared MinIO endpoint URL for multi-cluster support (all clusters will use this bucket)")
+    parser.add_argument("--shared-minio-access-key", type=str,
+                        help="Shared MinIO access key for multi-cluster support")
+    parser.add_argument("--shared-minio-secret-key", type=str,
+                        help="Shared MinIO secret key for multi-cluster support")
+    parser.add_argument("--shared-minio-region", type=str,
+                        help="Shared MinIO region for multi-cluster support")
+    parser.add_argument("--shared-minio-verify-ssl", action="store_true", default=True,
+                        help="Verify SSL certificates for shared MinIO (default: true)")
+    
+    # Legacy single cluster arguments (for backward compatibility)
     parser.add_argument("--oscar-endpoint", type=str, 
                         default=DEFAULT_OSCAR_ENDPOINT,
-                        help="OSCAR cluster endpoint URL")
+                        help="OSCAR cluster endpoint URL (legacy, use --cluster-endpoint instead)")
     
-    # Authentication options - either token or username/password
+    # Authentication options - either token or username/password (legacy)
     auth_group = parser.add_mutually_exclusive_group()
     auth_group.add_argument("--oscar-token", type=str,
-                           help="OSCAR OIDC authentication token")
+                           help="OSCAR OIDC authentication token (legacy, use --cluster-token instead)")
     auth_group.add_argument("--oscar-username", type=str,
-                           help="OSCAR username for basic authentication")
+                           help="OSCAR username for basic authentication (legacy, use --cluster-username instead)")
     
     parser.add_argument("--oscar-password", type=str,
-                        help="OSCAR password for basic authentication (required if --oscar-username is used)")
+                        help="OSCAR password for basic authentication (legacy, use --cluster-password instead)")
     
     parser.add_argument("--mount-path", type=str,
                         default=DEFAULT_MOUNT_PATH,
@@ -188,7 +362,7 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     
     parser.add_argument("--disable-ssl", 
                         action="store_true",
-                        help="Disable verification of SSL certificates for the cluster service")
+                        help="Disable verification of SSL certificates for the cluster service (legacy)")
     
     # Standard cwltool arguments
     parser.add_argument("--basedir", type=Text)
