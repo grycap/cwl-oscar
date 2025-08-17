@@ -1,0 +1,46 @@
+"""OSCAR Path Mapper for execution path mapping."""
+
+import logging
+
+from cwltool.pathmapper import PathMapper, MapperEnt
+
+try:
+    from constants import *
+except ImportError:
+    # Fallback for package import
+    from .constants import *
+
+log = logging.getLogger("oscar-backend")
+
+
+class OSCARPathMapper(PathMapper):
+    """Path mapper for OSCAR execution - maps local paths to mount paths."""
+    
+    def __init__(self, referenced_files, basedir, stagedir, separateDirs, mount_path=None, **kwargs):
+        # Extract mount_path from kwargs if provided, or use default
+        self.mount_path = mount_path or DEFAULT_MOUNT_PATH
+        super(OSCARPathMapper, self).__init__(referenced_files, basedir, stagedir, separateDirs, **kwargs)
+        
+    def setup(self, referenced_files, basedir):
+        """Set up path mappings for OSCAR execution."""
+        # Call parent setup first to handle the standard path mapping
+        super(OSCARPathMapper, self).setup(referenced_files, basedir)
+        
+        # Apply OSCAR-specific path mappings
+        # For files already in mount path, use direct mount path access instead of staging
+        for key in list(self._pathmap.keys()):
+            entry = self._pathmap[key]
+            if hasattr(entry, 'resolved') and entry.resolved:
+                resolved_path = entry.resolved
+                
+                # If file is already in the mount path, use it directly without staging
+                if self.mount_path in resolved_path:
+                    log.debug("File already in mount path, using direct access: %s", resolved_path)
+                    # Use the mount path directly - no staging needed
+                    self._pathmap[key] = MapperEnt(
+                        resolved=resolved_path,
+                        target=resolved_path,  # Use same path as target
+                        type=entry.type,
+                        staged=False  # Don't stage - file is already accessible
+                    )
+                    log.debug("Direct mount path mapping: %s -> %s", resolved_path, resolved_path)
