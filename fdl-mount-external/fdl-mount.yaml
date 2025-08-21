@@ -1,0 +1,28 @@
+functions:
+  oscar:
+  - grnet:
+      name: copy-input-mounted-vol-external
+      memory: 1Gi
+      cpu: '1.0'
+      image: opensourcefoundries/minideb:jessie
+      script: script.sh
+      environment:
+        variables:
+          MOUNT_PATH: "/mnt/shared-epitest"
+      input:
+      - storage_provider: minio.default
+        path: copy-input-mounted-vol-external/in
+      output:
+      - storage_provider: minio.default
+        path: copy-input-mounted-vol-external/out
+      mount:
+        storage_provider: minio.external
+        path: /shared-epitest
+storage_providers:
+  minio:
+    external:
+      endpoint: 
+      access_key: 
+      secret_key: 
+      verify: true
+      region: us-east-1
