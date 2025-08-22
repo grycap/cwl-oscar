@@ -229,7 +229,7 @@ class OSCARServiceManager:
                 "minio": {
                     "shared": {
                         "endpoint": shared_minio_config["endpoint"],
-                        "verify": shared_minio_config.get("verify_ssl", False),
+                        "verify": shared_minio_config.get("verify_ssl", True),
                         "access_key": shared_minio_config["access_key"],
                         "secret_key": shared_minio_config["secret_key"],
                         "region": shared_minio_config.get("region") or DEFAULT_REGION
