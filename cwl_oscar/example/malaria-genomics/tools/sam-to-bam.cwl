@@ -13,7 +13,7 @@ requirements:
   - class: ResourceRequirement
     coresMin: 2
   - class: DockerRequirement
-    dockerPull: "quay.io/biocontainers/samtools:1.16.1--h6899075_1"
+    dockerPull: "robertbio/samtools:1.16.1-debian"
 
 baseCommand: ["bash", "-c"]
 

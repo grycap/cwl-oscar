@@ -13,7 +13,7 @@ requirements:
   - class: ResourceRequirement
     coresMin: 2
   - class: DockerRequirement
-    dockerPull: "quay.io/biocontainers/bcftools:1.16--hfe4b78e_1"
+    dockerPull: "robertbio/bcftools:1.16-debian"
 
 baseCommand: ["bash", "-c"]
 

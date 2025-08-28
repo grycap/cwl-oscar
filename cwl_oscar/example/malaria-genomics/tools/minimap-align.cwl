@@ -13,7 +13,7 @@ requirements:
   - class: ResourceRequirement
     coresMin: 4
   - class: DockerRequirement
-    dockerPull: "quay.io/biocontainers/minimap2:2.24--h7132678_1"
+    dockerPull: "robertbio/minimap2:2.24-debian"
 
 baseCommand: ["minimap2"]
 
@@ -50,10 +50,14 @@ arguments:
   - "-a"  # ! Output in SAM format
   - "--secondary=no"  # ! Don't output secondary alignments
   - "--MD"  # ! Generate MD tag for SNP/variant calling
+  - "-v"  # ! Set verbosity level to 1 (reduce log messages)
+  - "1"
+  - "-o"  # ! Specify output file directly instead of using stdout
+  - $(inputs.fastq_reads.nameroot)_$(inputs.reference_fasta.nameroot)_aligned.sam
 
 outputs:
   alignment_sam:
-    type: stdout
+    type: File
+    outputBinding:
+      glob: "*_aligned.sam"
     doc: "SAM alignment file"
-
-stdout: $(inputs.fastq_reads.nameroot)_$(inputs.reference_fasta.nameroot)_aligned.sam

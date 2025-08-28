@@ -11,7 +11,7 @@ doc: |
 requirements:
   - class: InlineJavascriptRequirement
   - class: DockerRequirement
-    dockerPull: "quay.io/biocontainers/nanofilt:2.8.0--py_0"
+    dockerPull: "robertbio/nanofilt:2.8.0-debian"
 
 baseCommand: ["bash", "-c"]
 
