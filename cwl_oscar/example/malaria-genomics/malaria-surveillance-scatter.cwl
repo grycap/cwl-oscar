@@ -69,6 +69,27 @@ steps:
       max_read_length: max_read_length
       threads: threads
     out: [filtered_fastq, alignment_bam, variants_vcf, drug_resistance_report]
+  
+  # Collect scattered reports into organized directory structure
+  collect_reports:
+    run: tools/collect-reports.cwl
+    in:
+      drug_resistance_reports: process_samples/drug_resistance_report
+      sample_names: marker_ids
+    out: [results_directory]
+  
+  # Summarize results from all samples  
+  summarize_results:
+    run: tools/summarize-results.cwl
+    in:
+      summarize_script:
+        default:
+          class: File
+          location: summarize-results.py
+      results_directory: collect_reports/results_directory
+      output_prefix:
+        default: "malaria_surveillance_batch"
+    out: [summary_directory, overall_summary, detailed_results, drug_resistance_summary, summary_report]
 
 outputs:
   # Arrays of output files from all samples
@@ -91,3 +112,29 @@ outputs:
     type: File[]
     outputSource: process_samples/drug_resistance_report
     doc: "Drug resistance analysis reports for all samples"
+  
+  # Batch summary outputs
+  batch_summary_directory:
+    type: Directory
+    outputSource: summarize_results/summary_directory
+    doc: "Complete directory with all summary reports and analysis"
+  
+  batch_overall_summary:
+    type: File
+    outputSource: summarize_results/overall_summary
+    doc: "Overall batch statistics in JSON format"
+  
+  batch_detailed_results:
+    type: File
+    outputSource: summarize_results/detailed_results
+    doc: "Detailed results for all samples in CSV format"
+  
+  batch_drug_resistance_summary:
+    type: File
+    outputSource: summarize_results/drug_resistance_summary
+    doc: "Drug resistance analysis summary across all samples"
+  
+  batch_summary_report:
+    type: File
+    outputSource: summarize_results/summary_report
+    doc: "Human-readable batch summary report"

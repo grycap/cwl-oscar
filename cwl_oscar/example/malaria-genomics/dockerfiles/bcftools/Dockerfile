@@ -33,6 +33,18 @@ RUN wget https://github.com/samtools/htslib/releases/download/1.16/htslib-1.16.t
     cd .. && \
     rm -rf htslib-1.16 htslib-1.16.tar.bz2
 
+# * Download and compile samtools (needed by bcftools variant calling step)
+RUN wget https://github.com/samtools/samtools/releases/download/1.16.1/samtools-1.16.1.tar.bz2 && \
+    tar -xjf samtools-1.16.1.tar.bz2 && \
+    cd samtools-1.16.1 && \
+    autoheader && \
+    autoconf -Wno-syntax && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf samtools-1.16.1 samtools-1.16.1.tar.bz2
+
 # * Download and compile bcftools
 RUN wget https://github.com/samtools/bcftools/releases/download/1.16/bcftools-1.16.tar.bz2 && \
     tar -xjf bcftools-1.16.tar.bz2 && \

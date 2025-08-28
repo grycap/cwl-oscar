@@ -47,24 +47,35 @@ fi
 echo "Building NanoFilt image..."
 cd nanofilt
 $BUILD_CMD -t robertbio/nanofilt:2.8.0-debian .
+docker push robertbio/nanofilt:2.8.0-debian
 cd ..
 
 # * Build Minimap2 image
 echo "Building Minimap2 image..."
 cd minimap2
 $BUILD_CMD -t robertbio/minimap2:2.24-debian .
+docker push robertbio/minimap2:2.24-debian
 cd ..
 
 # * Build Samtools image
 echo "Building Samtools image..."
 cd samtools
 $BUILD_CMD -t robertbio/samtools:1.16.1-debian .
+docker push robertbio/samtools:1.16.1-debian
 cd ..
 
 # * Build BCFtools image
 echo "Building BCFtools image..."
 cd bcftools
 $BUILD_CMD -t robertbio/bcftools:1.16-debian .
+docker push robertbio/bcftools:1.16-debian
+cd ..
+
+# * Build Summary Analysis image
+echo "Building Summary Analysis image..."
+cd summary-analysis
+$BUILD_CMD -t robertbio/summary-analysis:1.0-debian .
+docker push robertbio/summary-analysis:1.0-debian
 cd ..
 
 echo "All Docker images built successfully!"
