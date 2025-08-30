@@ -1,0 +1,44 @@
+zenodo_10086238/ 
+
+# CWL temporary files
+*.tmp
+*_tmp/
+cwl_tmp*/
+
+# Output files
+final_reports/
+finalHaplotypList_*.csv
+finalSNPList_*.csv
+analysis_summary.json
+HaplotypeList_*.fasta
+
+# Intermediate analysis files
+*_mutations_detailed_analysis.csv*
+*_mutations_resistance_summary.csv*
+*_dada2_haplotypes.fasta*
+*_filter_stats.txt*
+*_counts.csv*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# R files
+*.RData
+*.Rhistory
+
+# Investigation and validation files (keep documentation)
+# INVESTIGATION_REPORT.md
+# VALIDATION_RESULTS.md
+
+# Temporary scripts
+create_quality_subset.py
+
+# Large data directories (keep structure but ignore contents)
+zenodo_10086238/rawData/
+test-data/
+
+# OS files
+.DS_Store
+Thumbs.db

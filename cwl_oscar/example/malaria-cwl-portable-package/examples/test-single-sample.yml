@@ -1,0 +1,18 @@
+# Test input for single sample analysis
+# Uses the sample we successfully tested
+
+raw_fastq:
+  class: File
+  path: ../zenodo_10086238/rawData/3D7_DR_Rep1_DR_dhfr_t25_F.fastq.gz
+
+marker_id: "DR_dhfr_t25"
+
+snp_positions:
+  class: File
+  path: ../zenodo_10086238/data/drug_resistance_SNP_positions.csv
+
+# Optional parameters (using defaults if not specified)
+min_length: 150
+max_length: 300
+min_quality: 8
+min_coverage: 65

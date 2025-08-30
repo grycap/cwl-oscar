@@ -1,0 +1,28 @@
+# Test input for multiple sample scatter analysis
+# Tests samples that should show different mutation patterns
+
+samples:
+  - fastq_file:
+      class: File
+      path: ../../rawData/3D7_DR_Rep1_DR_dhfr_t25_F.fastq.gz
+    marker_id: "DR_dhfr_t25"
+  
+  - fastq_file:
+      class: File
+      path: ../../rawData/Mixture5_DR_DR_dhfr_t25_F.fastq.gz
+    marker_id: "DR_dhfr_t25"
+  
+  - fastq_file:
+      class: File
+      path: ../../rawData/3D7_DR_Rep1_DR_dhps_436-437_F.fastq.gz
+    marker_id: "DR_dhps_436-437"
+
+snp_positions:
+  class: File
+  path: ../../data/drug_resistance_SNP_positions.csv
+
+# Global parameters
+min_length: 150
+max_length: 300
+min_quality: 8
+min_coverage: 65
