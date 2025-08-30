@@ -56,8 +56,8 @@ Run the comprehensive test suite:
 python cwl_oscar/test_oscar.py
 
 # Test with example workflow
-python cwl-oscar --oscar-endpoint https://test.example.com \
-                 --oscar-token dummy-token \
+python cwl-oscar --cluster-endpoint https://test.example.com \
+                 --cluster-token dummy-token \
                  cwl_oscar/example/hello.cwl \
                  cwl_oscar/example/input.json
 ```
@@ -124,14 +124,14 @@ If you prefer using Docker instead of setting up a local Python environment:
    ./docker-run.sh run --version
    
    # Run a workflow with OIDC token
-   ./docker-run.sh run --oscar-endpoint YOUR_OSCAR_ENDPOINT \
-                       --oscar-token YOUR_TOKEN \
+   ./docker-run.sh run --cluster-endpoint YOUR_OSCAR_ENDPOINT \
+                       --cluster-token YOUR_TOKEN \
                        examples/hello.cwl examples/input.json
    
    # Run a workflow with username/password
-   ./docker-run.sh run --oscar-endpoint YOUR_OSCAR_ENDPOINT \
-                       --oscar-username YOUR_USERNAME \
-                       --oscar-password YOUR_PASSWORD \
+   ./docker-run.sh run --cluster-endpoint YOUR_OSCAR_ENDPOINT \
+                       --cluster-username YOUR_USERNAME \
+                       --cluster-password YOUR_PASSWORD \
                        examples/hello.cwl examples/input.json
    ```
 
@@ -150,8 +150,8 @@ If you prefer using Docker instead of setting up a local Python environment:
 You can set these environment variables for easier usage:
 
 ```bash
-export OSCAR_ENDPOINT=https://oscar.fedcloud.eu
-export OSCAR_TOKEN=your_token_here
+export CLUSTER_ENDPOINT=https://oscar.fedcloud.eu
+export CLUSTER_TOKEN=your_token_here
 export SERVICE_NAME=run-script-event2
 export MOUNT_PATH=/mnt/cwl2o-data/mount
 

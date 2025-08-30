@@ -45,11 +45,11 @@ chmod +x cwl-oscar
 2. **Run with Docker:**
    ```bash
    # Using helper script (recommended)
-   ./docker-run.sh run --oscar-endpoint YOUR_ENDPOINT --oscar-token YOUR_TOKEN workflow.cwl input.json
+   ./docker-run.sh run --cluster-endpoint YOUR_ENDPOINT --cluster-token YOUR_TOKEN workflow.cwl input.json
    
    # Using docker directly
    docker run --rm -v $(pwd):/workspace cwl-oscar \
-     --oscar-endpoint YOUR_ENDPOINT --oscar-token YOUR_TOKEN \
+     --cluster-endpoint YOUR_ENDPOINT --cluster-token YOUR_TOKEN \
      workflow.cwl input.json
    ```
 
@@ -62,52 +62,72 @@ chmod +x cwl-oscar
 
 ### Required Parameters
 
-- `--oscar-endpoint`: OSCAR cluster endpoint URL
+- `--cluster-endpoint`: OSCAR cluster endpoint URL (can specify multiple for multi-cluster)
 
-**Authentication (choose one):**
-- `--oscar-token`: OSCAR OIDC authentication token
-- `--oscar-username` + `--oscar-password`: OSCAR username and password for basic authentication
+**Authentication (choose one per cluster):**
+- `--cluster-token`: OSCAR OIDC authentication token
+- `--cluster-username` + `--cluster-password`: OSCAR username and password for basic authentication
 
 ### Optional Parameters
 
 - `--mount-path`: Mount path for shared data (default: `/mnt/cwl2o-data/mount`)
 - `--service-name`: OSCAR service name to use (default: `run-script-event2`)
+- `--cluster-disable-ssl`: Disable SSL verification for corresponding cluster
+- `--shared-minio-endpoint`: Shared MinIO endpoint for multi-cluster support
+- `--shared-minio-access-key`: Shared MinIO access key for multi-cluster support
+- `--shared-minio-secret-key`: Shared MinIO secret key for multi-cluster support
+- `--parallel`: Enable parallel execution
+- `--debug`: Enable detailed debug logging
 
 ## Usage
 
 ### Basic Usage
 
-**Local execution with OIDC token:**
+**Single cluster execution with OIDC token:**
 ```bash
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-token YOUR_TOKEN \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-token YOUR_TOKEN \
            workflow.cwl inputs.json
 ```
 
-**Local execution with username/password:**
+**Single cluster execution with username/password:**
 ```bash
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-username YOUR_USERNAME \
-           --oscar-password YOUR_PASSWORD \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-username YOUR_USERNAME \
+           --cluster-password YOUR_PASSWORD \
+           workflow.cwl inputs.json
+```
+
+**Multi-cluster execution with shared storage:**
+```bash
+./cwl-oscar --cluster-endpoint https://cluster1.example.com \
+           --cluster-token TOKEN1 \
+           --cluster-endpoint https://cluster2.example.com \
+           --cluster-username USER2 \
+           --cluster-password PASS2 \
+           --shared-minio-endpoint https://minio.shared.com \
+           --shared-minio-access-key ACCESS_KEY \
+           --shared-minio-secret-key SECRET_KEY \
+           --parallel \
            workflow.cwl inputs.json
 ```
 
 **Docker execution:**
 ```bash
 # Using OIDC token
-./docker-run.sh run --oscar-endpoint https://oscar.test.fedcloud.eu \
-                    --oscar-token YOUR_TOKEN \
+./docker-run.sh run --cluster-endpoint https://oscar.test.fedcloud.eu \
+                    --cluster-token YOUR_TOKEN \
                     workflow.cwl inputs.json
 
 # Using username/password
-./docker-run.sh run --oscar-endpoint https://oscar.test.fedcloud.eu \
-                    --oscar-username YOUR_USERNAME \
-                    --oscar-password YOUR_PASSWORD \
+./docker-run.sh run --cluster-endpoint https://oscar.test.fedcloud.eu \
+                    --cluster-username YOUR_USERNAME \
+                    --cluster-password YOUR_PASSWORD \
                     workflow.cwl inputs.json
 
 # Or with environment variables
-export OSCAR_ENDPOINT=https://oscar.test.fedcloud.eu
-export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
+export CLUSTER_ENDPOINT=https://oscar.test.fedcloud.eu
+export CLUSTER_TOKEN=YOUR_TOKEN  # OR set CLUSTER_USERNAME and CLUSTER_PASSWORD
 ./docker-run.sh run workflow.cwl inputs.json
 ```
 
@@ -115,15 +135,15 @@ export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
 
 ```bash
 # With OIDC token
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-token YOUR_TOKEN \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-token YOUR_TOKEN \
            --mount-path /mnt/custom/mount \
            workflow.cwl inputs.json
 
 # With username/password
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-username YOUR_USERNAME \
-           --oscar-password YOUR_PASSWORD \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-username YOUR_USERNAME \
+           --cluster-password YOUR_PASSWORD \
            --mount-path /mnt/custom/mount \
            workflow.cwl inputs.json
 ```
@@ -131,9 +151,9 @@ export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
 ### With Custom Service Name
 
 ```bash
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-username YOUR_USERNAME \
-           --oscar-password YOUR_PASSWORD \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-username YOUR_USERNAME \
+           --cluster-password YOUR_PASSWORD \
            --service-name my-custom-service \
            workflow.cwl inputs.json
 ```
@@ -141,9 +161,9 @@ export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
 ### Debug Mode
 
 ```bash
-./cwl-oscar --oscar-endpoint https://oscar.test.fedcloud.eu \
-           --oscar-username YOUR_USERNAME \
-           --oscar-password YOUR_PASSWORD \
+./cwl-oscar --cluster-endpoint https://oscar.test.fedcloud.eu \
+           --cluster-username YOUR_USERNAME \
+           --cluster-password YOUR_PASSWORD \
            --debug \
            workflow.cwl inputs.json
 ```
@@ -346,7 +366,7 @@ def make_oscar_tool(spec, loading_context, oscar_endpoint, oscar_token, mount_pa
 Enable debug logging to see detailed execution information:
 
 ```bash
-./cwl-oscar --debug --oscar-endpoint ... --oscar-token ... workflow.cwl inputs.json
+./cwl-oscar --debug --cluster-endpoint ... --cluster-token ... workflow.cwl inputs.json
 ```
 
 

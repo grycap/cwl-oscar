@@ -32,7 +32,6 @@ console = logging.StreamHandler(sys.stderr)
 log.addHandler(console)
 
 DEFAULT_TMP_PREFIX = "tmp"
-DEFAULT_OSCAR_ENDPOINT = ""
 DEFAULT_MOUNT_PATH = "/mnt/cwl2o-data/mount"
 
 
@@ -165,38 +164,10 @@ def main(args=None):
             auth_method = "token" if token else "username/password"
             log.info("Added cluster %d: %s (%s)", i+1, endpoint, auth_method)
     
-    # Handle legacy single cluster arguments (for backward compatibility)
-    elif parsed_args.oscar_endpoint:
-        log.info("Processing legacy single cluster configuration")
-        ssl = not parsed_args.disable_ssl
-        
-        # Check authentication parameters
-        if parsed_args.oscar_token is None and parsed_args.oscar_username is None:
-            print(versionstring(), file=sys.stderr)
-            parser.print_usage(sys.stderr)
-            print("cwl-oscar: error: either --oscar-token or --oscar-username is required", file=sys.stderr)
-            return 1
-        
-        if parsed_args.oscar_username is not None and parsed_args.oscar_password is None:
-            print(versionstring(), file=sys.stderr)
-            parser.print_usage(sys.stderr)
-            print("cwl-oscar: error: --oscar-password is required when using --oscar-username", file=sys.stderr)
-            return 1
-        
-        # Add legacy cluster to manager
-        cluster_manager.add_cluster_from_args(
-            parsed_args.oscar_endpoint,
-            parsed_args.oscar_token,
-            parsed_args.oscar_username,
-            parsed_args.oscar_password,
-            ssl
-        )
-        log.info("Added legacy cluster: %s", parsed_args.oscar_endpoint)
-    
     else:
         print(versionstring(), file=sys.stderr)
         parser.print_usage(sys.stderr)
-        print("cwl-oscar: error: either --cluster-endpoint or --oscar-endpoint is required", file=sys.stderr)
+        print("cwl-oscar: error: --cluster-endpoint is required (at least one cluster must be specified)", file=sys.stderr)
         return 1
     
     # Validate cluster configurations
@@ -338,31 +309,12 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     parser.add_argument("--shared-minio-verify-ssl", action="store_true", default=True,
                         help="Verify SSL certificates for shared MinIO (default: true)")
     
-    # Legacy single cluster arguments (for backward compatibility)
-    parser.add_argument("--oscar-endpoint", type=str, 
-                        default=DEFAULT_OSCAR_ENDPOINT,
-                        help="OSCAR cluster endpoint URL (legacy, use --cluster-endpoint instead)")
-    
-    # Authentication options - either token or username/password (legacy)
-    auth_group = parser.add_mutually_exclusive_group()
-    auth_group.add_argument("--oscar-token", type=str,
-                           help="OSCAR OIDC authentication token (legacy, use --cluster-token instead)")
-    auth_group.add_argument("--oscar-username", type=str,
-                           help="OSCAR username for basic authentication (legacy, use --cluster-username instead)")
-    
-    parser.add_argument("--oscar-password", type=str,
-                        help="OSCAR password for basic authentication (legacy, use --cluster-password instead)")
-    
     parser.add_argument("--mount-path", type=str,
                         default=DEFAULT_MOUNT_PATH,
                         help="Mount path for shared data")
     parser.add_argument("--service-name", type=str,
                         default="run-script-event2",
                         help="OSCAR service name to use for execution")
-    
-    parser.add_argument("--disable-ssl", 
-                        action="store_true",
-                        help="Disable verification of SSL certificates for the cluster service (legacy)")
     
     # Standard cwltool arguments
     parser.add_argument("--basedir", type=Text)
