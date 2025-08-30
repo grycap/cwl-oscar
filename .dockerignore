@@ -219,4 +219,6 @@ values-*.yml
 passwords.txt
 secrets.txt
 tokens.txt
-credentials.txt 
+credentials.txt
+
+execution-logs/
