@@ -71,28 +71,41 @@ deactivate
 
 ## Quick Start
 
-1. Activate the virtual environment (see setup above)
-2. Run a simple test:
-   ```bash
-   python cwl-oscar --version
-   ```
-3. Execute a workflow on OSCAR:
-   ```bash
-   # With OIDC token
-   python cwl-oscar --oscar-endpoint YOUR_OSCAR_ENDPOINT \
-                    --oscar-token YOUR_TOKEN \
-                    cwl_oscar/example/hello.cwl \
-                    cwl_oscar/example/input.json
-   
-   # With username/password  
-   python cwl-oscar --oscar-endpoint YOUR_OSCAR_ENDPOINT \
-                    --oscar-username YOUR_USERNAME \
-                    --oscar-password YOUR_PASSWORD \
-                    cwl_oscar/example/hello.cwl \
-                    cwl_oscar/example/input.json
-   ```
+### Option 1: Local Runner (Recommended for beginners)
 
-For detailed usage instructions, see the [cwl-oscar documentation](./cwl_oscar/README.md).
+Run workflows from local files on remote OSCAR clusters:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run a workflow
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint YOUR_OSCAR_ENDPOINT \
+  --cluster-token YOUR_TOKEN \
+  cwl_oscar/example/hello.cwl \
+  cwl_oscar/example/input_hello.json
+```
+
+### Option 2: Direct CWL-OSCAR
+
+Use the main cwl-oscar tool directly from the oscar service:
+
+```bash
+# Test installation
+python cwl-oscar --version
+
+# Execute workflow
+python cwl-oscar \
+  --cluster-endpoint YOUR_OSCAR_ENDPOINT \
+  --cluster-token YOUR_TOKEN \
+  cwl_oscar/example/hello.cwl \
+  cwl_oscar/example/input.json
+```
+
+For detailed instructions:
+- [Local Runner Guide](./LOCAL_RUNNER.md) - Simple workflow execution 
+- [CWL-OSCAR Documentation](./cwl_oscar/README.md) - Advanced usage
 
 ## Docker Usage
 

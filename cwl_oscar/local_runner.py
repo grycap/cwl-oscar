@@ -2,8 +2,19 @@
 """
 Local CWL-OSCAR Runner
 
-Allows running local CWL workflows with local input files on OSCAR infrastructure.
-Handles file uploads, workflow execution, and result downloads.
+A tool for running CWL workflows from your local machine on remote OSCAR clusters.
+
+Key Features:
+- Upload local workflow files to OSCAR cluster storage
+- Execute workflows on remote OSCAR infrastructure  
+- Download results back to local machine
+- Support for multiple OSCAR clusters
+- Shared MinIO storage for multi-cluster workflows
+
+Usage:
+    python local_runner.py --cluster-endpoint https://oscar.example.com \
+                           --cluster-token your-token \
+                           workflow.cwl input.json
 """
 
 import os

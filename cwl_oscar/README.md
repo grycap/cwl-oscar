@@ -6,7 +6,8 @@ A CWL executor that runs Common Workflow Language (CWL) workflows on OSCAR clust
 
 - **OSCAR Integration**: Executes CWL workflows on OSCAR clusters
 - **Mounted Storage**: Uses shared mount paths for efficient data access
-- **Modular Execution Interface**: Clean separation between CWL integration and OSCAR execution
+- **Multi-Cluster Support**: Execute workflows across multiple OSCAR clusters
+- **Local Runner**: Run workflows from local files on remote OSCAR infrastructure
 - **Token Authentication**: Supports OIDC token authentication
 - **Synchronous Execution**: Currently supports synchronous job execution
 - **Full CWL Compatibility**: Uses cwltool's core functionality for CWL parsing
@@ -146,6 +147,64 @@ export OSCAR_TOKEN=YOUR_TOKEN  # OR set OSCAR_USERNAME and OSCAR_PASSWORD
            --debug \
            workflow.cwl inputs.json
 ```
+
+## Local Runner
+
+The Local Runner (`local_runner.py`) allows you to run CWL workflows from your local machine on remote OSCAR clusters. It handles file uploads, workflow execution, and result downloads automatically.
+
+### Usage
+
+**Single Cluster with Token:**
+```bash
+python local_runner.py \
+  --cluster-endpoint https://oscar.example.com \
+  --cluster-token your-oidc-token \
+  example/hello.cwl \
+  example/input_hello.json
+```
+
+**Single Cluster with Username/Password:**
+```bash
+python local_runner.py \
+  --cluster-endpoint https://oscar.example.com \
+  --cluster-username your-username \
+  --cluster-password your-password \
+  example/hello.cwl \
+  example/input_hello.json
+```
+
+**Multiple Clusters with Shared Storage:**
+```bash
+python local_runner.py \
+  --cluster-endpoint https://cluster1.example.com \
+  --cluster-token token1 \
+  --cluster-endpoint https://cluster2.example.com \
+  --cluster-username user2 \
+  --cluster-password pass2 \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  --parallel \
+  --debug \
+  example/workflow.cwl \
+  example/input.json
+```
+
+### Common Options
+
+- `--parallel`: Enable parallel execution
+- `--debug`: Enable debug logging  
+- `--quiet`: Only show warnings and errors
+- `--timeout 1200`: Set timeout in seconds
+- `--output-dir ./results`: Specify output directory
+- `--service-name my-service`: Use custom OSCAR service name
+
+### How It Works
+
+1. **Upload**: Uploads your local workflow and input files to OSCAR storage
+2. **Execute**: Runs the workflow on the OSCAR cluster(s) 
+3. **Download**: Downloads results back to your local machine
+4. **Cleanup**: Removes temporary files
 
 ## How It Works
 
