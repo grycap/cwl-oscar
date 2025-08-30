@@ -4,7 +4,7 @@ functions:
       name: cwl-oscar
       memory: 1Gi
       cpu: '1.0'
-      image: robertbio/cwl-oscar:linux-amd64
+      image: robertbio/cwl-oscar:latest
       script: script.sh
       environment:
         variables:

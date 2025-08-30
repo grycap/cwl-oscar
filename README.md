@@ -6,7 +6,7 @@ A repository containing tools for converting and executing Common Workflow Langu
 
 - [cwl-oscar](./cwl_oscar) - CWL executor for OSCAR clusters
 - [cwl-example](./cwl-example) - Example CWL workflows
-- [fdl-example](./fdl-example) - FDL workflow examples
+- [fdl-examples](./fdl-examples) - FDL workflow examples
 - [cwl2fdl script](./cwl2fdl.md) - CWL to FDL conversion utility
 
 ## Development Setup
