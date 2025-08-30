@@ -6,7 +6,7 @@
 set -e
 
 DOCKER_IMAGE="cwl-oscar:latest"
-DOCKER_REGISTRY="your-registry.com"  # Update this to your registry
+DOCKER_REGISTRY="robertbio"  # Docker Hub username
 
 # Colors for output
 RED='\033[0;31m'
@@ -77,27 +77,33 @@ build_multi_platform() {
         docker buildx use multiplatform-builder
     fi
     
-    # Build for multiple platforms
+    # Build individual platform images
+    echo -e "${YELLOW}Building AMD64 image...${NC}"
     docker buildx build \
-        --platform linux/amd64,linux/arm64 \
+        --platform linux/amd64 \
         --no-cache \
-        -t "cwl-oscar:multi-platform" \
+        -t "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" \
         --load \
         .
     
-    # Tag as latest
-    docker tag "cwl-oscar:multi-platform" "$DOCKER_IMAGE"
+    echo -e "${YELLOW}Building ARM64 image...${NC}"
+    docker buildx build \
+        --platform linux/arm64 \
+        --no-cache \
+        -t "$DOCKER_REGISTRY/cwl-oscar:latest-arm64" \
+        --load \
+        .
     
-    echo -e "${GREEN}✓ Multi-platform image built successfully${NC}"
-    echo -e "${BLUE}Platforms: linux/amd64, linux/arm64${NC}"
-    echo -e "${BLUE}Tagged as: cwl-oscar:multi-platform and $DOCKER_IMAGE${NC}"
+    # Tag for convenience
+    docker tag "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" "$DOCKER_IMAGE"
+    
+    echo -e "${GREEN}✓ Multi-platform images built successfully${NC}"
+    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:latest-amd64${NC}"
+    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:latest-arm64${NC}"
+    echo -e "${BLUE}Tagged latest as: $DOCKER_IMAGE${NC}"
 }
 
 build_and_push_multiplatform() {
-    if [[ "$DOCKER_REGISTRY" == "your-registry.com" ]]; then
-        echo -e "${RED}Please update DOCKER_REGISTRY in this script before pushing${NC}"
-        exit 1
-    fi
     
     echo -e "${BLUE}Building and pushing multi-platform image to registry...${NC}"
     
@@ -180,26 +186,44 @@ test_image() {
 }
 
 push_image() {
-    if [[ "$DOCKER_REGISTRY" == "your-registry.com" ]]; then
-        echo -e "${RED}Please update DOCKER_REGISTRY in this script before pushing${NC}"
-        exit 1
+    echo -e "${BLUE}Pushing multiplatform images to Docker Hub...${NC}"
+    
+    # Check if we have multiplatform images
+    if docker image inspect "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" >/dev/null 2>&1 && \
+       docker image inspect "$DOCKER_REGISTRY/cwl-oscar:latest-arm64" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Found multiplatform images, pushing both and creating manifest...${NC}"
+        
+        # Push individual platform images
+        echo -e "${BLUE}Pushing AMD64 image...${NC}"
+        docker push "$DOCKER_REGISTRY/cwl-oscar:latest-amd64"
+        
+        echo -e "${BLUE}Pushing ARM64 image...${NC}"
+        docker push "$DOCKER_REGISTRY/cwl-oscar:latest-arm64"
+        
+        # Create and push manifest list
+        echo -e "${BLUE}Creating manifest list for latest tag...${NC}"
+        docker manifest create "$DOCKER_REGISTRY/cwl-oscar:latest" \
+            "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" \
+            "$DOCKER_REGISTRY/cwl-oscar:latest-arm64"
+        
+        echo -e "${BLUE}Pushing manifest list...${NC}"
+        docker manifest push "$DOCKER_REGISTRY/cwl-oscar:latest"
+        
+        echo -e "${GREEN}✓ Multiplatform image pushed successfully as $DOCKER_REGISTRY/cwl-oscar:latest${NC}"
+        echo -e "${BLUE}Platforms: linux/amd64, linux/arm64${NC}"
+    else
+        # Fall back to single image push
+        REMOTE_TAG="$DOCKER_REGISTRY/cwl-oscar:latest"
+        echo -e "${BLUE}Tagging image as $REMOTE_TAG...${NC}"
+        docker tag "$DOCKER_IMAGE" "$REMOTE_TAG"
+        
+        echo -e "${BLUE}Pushing to registry...${NC}"
+        docker push "$REMOTE_TAG"
+        echo -e "${GREEN}✓ Image pushed successfully${NC}"
     fi
-    
-    REMOTE_TAG="$DOCKER_REGISTRY/cwl-oscar:latest"
-    echo -e "${BLUE}Tagging image as $REMOTE_TAG...${NC}"
-    docker tag "$DOCKER_IMAGE" "$REMOTE_TAG"
-    
-    echo -e "${BLUE}Pushing to registry...${NC}"
-    docker push "$REMOTE_TAG"
-    echo -e "${GREEN}✓ Image pushed successfully${NC}"
 }
 
 pull_image() {
-    if [[ "$DOCKER_REGISTRY" == "your-registry.com" ]]; then
-        echo -e "${RED}Please update DOCKER_REGISTRY in this script before pulling${NC}"
-        exit 1
-    fi
-    
     REMOTE_TAG="$DOCKER_REGISTRY/cwl-oscar:latest"
     echo -e "${BLUE}Pulling from registry...${NC}"
     docker pull "$REMOTE_TAG"
