@@ -82,7 +82,7 @@ build_multi_platform() {
     docker buildx build \
         --platform linux/amd64 \
         --no-cache \
-        -t "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" \
+        -t "$DOCKER_REGISTRY/cwl-oscar:amd64" \
         --load \
         .
     
@@ -90,16 +90,16 @@ build_multi_platform() {
     docker buildx build \
         --platform linux/arm64 \
         --no-cache \
-        -t "$DOCKER_REGISTRY/cwl-oscar:latest-arm64" \
+        -t "$DOCKER_REGISTRY/cwl-oscar:arm64" \
         --load \
         .
     
     # Tag for convenience
-    docker tag "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" "$DOCKER_IMAGE"
+    docker tag "$DOCKER_REGISTRY/cwl-oscar:amd64" "$DOCKER_IMAGE"
     
     echo -e "${GREEN}✓ Multi-platform images built successfully${NC}"
-    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:latest-amd64${NC}"
-    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:latest-arm64${NC}"
+    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:amd64${NC}"
+    echo -e "${BLUE}Built: $DOCKER_REGISTRY/cwl-oscar:arm64${NC}"
     echo -e "${BLUE}Tagged latest as: $DOCKER_IMAGE${NC}"
 }
 
@@ -189,22 +189,22 @@ push_image() {
     echo -e "${BLUE}Pushing multiplatform images to Docker Hub...${NC}"
     
     # Check if we have multiplatform images
-    if docker image inspect "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" >/dev/null 2>&1 && \
-       docker image inspect "$DOCKER_REGISTRY/cwl-oscar:latest-arm64" >/dev/null 2>&1; then
+    if docker image inspect "$DOCKER_REGISTRY/cwl-oscar:amd64" >/dev/null 2>&1 && \
+       docker image inspect "$DOCKER_REGISTRY/cwl-oscar:arm64" >/dev/null 2>&1; then
         echo -e "${YELLOW}Found multiplatform images, pushing both and creating manifest...${NC}"
         
         # Push individual platform images
         echo -e "${BLUE}Pushing AMD64 image...${NC}"
-        docker push "$DOCKER_REGISTRY/cwl-oscar:latest-amd64"
+        docker push "$DOCKER_REGISTRY/cwl-oscar:amd64"
         
         echo -e "${BLUE}Pushing ARM64 image...${NC}"
-        docker push "$DOCKER_REGISTRY/cwl-oscar:latest-arm64"
+        docker push "$DOCKER_REGISTRY/cwl-oscar:arm64"
         
         # Create and push manifest list
         echo -e "${BLUE}Creating manifest list for latest tag...${NC}"
-        docker manifest create "$DOCKER_REGISTRY/cwl-oscar:latest" \
-            "$DOCKER_REGISTRY/cwl-oscar:latest-amd64" \
-            "$DOCKER_REGISTRY/cwl-oscar:latest-arm64"
+        docker manifest create --amend "$DOCKER_REGISTRY/cwl-oscar:latest" \
+            "$DOCKER_REGISTRY/cwl-oscar:amd64" \
+            "$DOCKER_REGISTRY/cwl-oscar:arm64"
         
         echo -e "${BLUE}Pushing manifest list...${NC}"
         docker manifest push "$DOCKER_REGISTRY/cwl-oscar:latest"

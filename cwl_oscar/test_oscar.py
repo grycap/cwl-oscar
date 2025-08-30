@@ -129,6 +129,141 @@ def test_cwl_oscar_execution():
     except Exception as e:
         print(f"✗ CWL workflow execution failed: {e}")
 
+def test_service_name_uniqueness():
+    """Test that different MinIO configurations produce unique service names."""
+    print("\nTesting service name uniqueness with different MinIO configs...")
+    
+    try:
+        from service_manager import OSCARServiceManager
+        
+        # Mock tool spec and requirements
+        tool_spec = {
+            'baseCommand': ['echo', 'hello'],
+            'class': 'CommandLineTool'
+        }
+        
+        requirements = {
+            'memory': '1Gi',
+            'cpu': '1.0',
+            'image': 'ubuntu:latest',
+            'environment': {}
+        }
+        
+        # Test 1: No shared MinIO config
+        service_manager1 = OSCARServiceManager(
+            oscar_endpoint="https://test1.example.com",
+            oscar_token="token1",
+            oscar_username=None,
+            oscar_password=None,
+            mount_path="/mnt/test",
+            shared_minio_config=None
+        )
+        
+        service_name1 = service_manager1.generate_service_name(tool_spec, requirements, "test-job")
+        print(f"Service name without MinIO config: {service_name1}")
+        
+        # Test 2: With shared MinIO config - endpoint A
+        shared_minio_config_a = {
+            'endpoint': 'https://minio-a.example.com',
+            'access_key': 'access_key_a',
+            'secret_key': 'secret_key_a',
+            'region': 'us-east-1'
+        }
+        
+        service_manager2 = OSCARServiceManager(
+            oscar_endpoint="https://test1.example.com",
+            oscar_token="token1",
+            oscar_username=None,
+            oscar_password=None,
+            mount_path="/mnt/test",
+            shared_minio_config=shared_minio_config_a
+        )
+        
+        service_name2 = service_manager2.generate_service_name(tool_spec, requirements, "test-job")
+        print(f"Service name with MinIO config A: {service_name2}")
+        
+        # Test 3: With shared MinIO config - endpoint B (different endpoint)
+        shared_minio_config_b = {
+            'endpoint': 'https://minio-b.example.com',
+            'access_key': 'access_key_a',  # Same access key (should not affect hash)
+            'secret_key': 'secret_key_a',  # Same secret key (should not affect hash)
+            'region': 'us-east-1'          # Same region (should not affect hash)
+        }
+        
+        service_manager3 = OSCARServiceManager(
+            oscar_endpoint="https://test1.example.com",
+            oscar_token="token1",
+            oscar_username=None,
+            oscar_password=None,
+            mount_path="/mnt/test",
+            shared_minio_config=shared_minio_config_b
+        )
+        
+        service_name3 = service_manager3.generate_service_name(tool_spec, requirements, "test-job")
+        print(f"Service name with MinIO config B: {service_name3}")
+        
+        # Test 4: Different mount path (should create different service)
+        service_manager4 = OSCARServiceManager(
+            oscar_endpoint="https://test1.example.com",
+            oscar_token="token1",
+            oscar_username=None,
+            oscar_password=None,
+            mount_path="/mnt/different-path",  # Different mount path
+            shared_minio_config=shared_minio_config_a  # Same MinIO config as test 2
+        )
+        
+        service_name4 = service_manager4.generate_service_name(tool_spec, requirements, "test-job")
+        print(f"Service name with different mount path: {service_name4}")
+        
+        # Test 5: Same endpoint as A but different access key (should create same service since only endpoint is hashed)
+        shared_minio_config_c = {
+            'endpoint': 'https://minio-a.example.com',  # Same endpoint as A
+            'access_key': 'different_access_key',       # Different access key (should not affect hash)
+            'secret_key': 'different_secret_key',
+            'region': 'eu-west-1'                       # Different region (should not affect hash)
+        }
+        
+        service_manager5 = OSCARServiceManager(
+            oscar_endpoint="https://test1.example.com",
+            oscar_token="token1",
+            oscar_username=None,
+            oscar_password=None,
+            mount_path="/mnt/test",  # Same mount path as test 2
+            shared_minio_config=shared_minio_config_c
+        )
+        
+        service_name5 = service_manager5.generate_service_name(tool_spec, requirements, "test-job")
+        print(f"Service name with same endpoint, different credentials: {service_name5}")
+        
+        # Verify service names: 1,2,3,4 should be unique, 2 and 5 should be the same
+        service_names = [service_name1, service_name2, service_name3, service_name4, service_name5]
+        print(f"All service names: {service_names}")
+        
+        # Check that services 2 and 5 are the same (same endpoint + mount path)
+        if service_name2 == service_name5:
+            print("✓ Services with same endpoint and mount path have same name (correct)")
+        else:
+            print("✗ Services with same endpoint and mount path should have same name")
+            return False
+        
+        # Check that services 1, 2, 3, 4 are unique
+        unique_services = [service_name1, service_name2, service_name3, service_name4]
+        unique_names_subset = set(unique_services)
+        
+        if len(unique_names_subset) == len(unique_services):
+            print("✓ Services with different configs have unique names - MinIO config isolation working correctly!")
+            print(f"  Generated {len(unique_names_subset)} unique service names for different configurations")
+            return True
+        else:
+            print("✗ Service names are not unique - MinIO config isolation failed!")
+            print(f"  Expected {len(unique_services)} unique names, got {len(unique_names_subset)}")
+            print(f"  Service names: {unique_services}")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Service name uniqueness test failed: {e}")
+        return False
+
 def test_oscar_service_direct():
     """Test OSCAR service execution directly."""
     print("\nTesting OSCAR service execution directly...")
@@ -182,18 +317,21 @@ def main():
     print("CWL-OSCAR Test Suite")
     print("=" * 50)
     
-    # Test 1: OSCAR client connectivity
+    # Test 1: Service name uniqueness (unit test - doesn't require OSCAR connection)
+    test_service_name_uniqueness()
+    
+    # Test 2: OSCAR client connectivity
     if not test_oscar_client():
         print("Skipping further tests due to OSCAR client failure")
         return 1
     
-    # Test 2: Basic cwl-oscar functionality
+    # Test 3: Basic cwl-oscar functionality
     test_cwl_oscar_basic()
     
-    # Test 3: Direct OSCAR service test
+    # Test 4: Direct OSCAR service test
     test_oscar_service_direct()
     
-    # Test 4: Full CWL workflow execution
+    # Test 5: Full CWL workflow execution
     # test_cwl_oscar_execution()  # Commented out for now as it requires the service to be properly set up
     
     print("\n" + "=" * 50)

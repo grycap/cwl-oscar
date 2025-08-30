@@ -154,12 +154,22 @@ class OSCARServiceManager:
             tool_id = "tool"
             log.debug("%s: No job_name provided, using default tool ID: '%s'", LOG_PREFIX_SERVICE_MANAGER, tool_id)
             
-        # Create a hash based on tool content and requirements
-        tool_content = json.dumps({
+        # Create a hash based on tool content, requirements, mount path, and MinIO endpoint
+        # ! Include mount_path and MinIO endpoint to ensure different configurations get unique services
+        hash_content = {
             'baseCommand': tool_spec.get('baseCommand'),
             'class': tool_spec.get('class'),
-            'requirements': requirements
-        }, sort_keys=True)
+            'requirements': requirements,
+            'mount_path': self.mount_path  # * Include mount path in hash for service isolation
+        }
+        
+        # Add MinIO endpoint to hash if present to prevent service reuse across different endpoints
+        if self.shared_minio_config:
+            hash_content['minio_endpoint'] = self.shared_minio_config.get('endpoint')
+            log.debug("%s: Including MinIO endpoint in hash: %s", 
+                     LOG_PREFIX_SERVICE_MANAGER, self.shared_minio_config.get('endpoint'))
+        
+        tool_content = json.dumps(hash_content, sort_keys=True)
         log.debug("%s: Tool content for hashing: %s", LOG_PREFIX_SERVICE_MANAGER, tool_content)
         
         service_hash = hashlib.md5(tool_content.encode()).hexdigest()[:SERVICE_HASH_LENGTH]

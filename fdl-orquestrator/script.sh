@@ -40,7 +40,7 @@ echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
 # Execute the command script with bash
 # The command script will handle its own working directory and environment setup
 # Redirect stdout to out.log and stderr to err.log
-bash "$INPUT_FILE_PATH" > "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
+bash "$INPUT_FILE_PATH" 1> "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" # 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
 exit_code=$?
 
 
