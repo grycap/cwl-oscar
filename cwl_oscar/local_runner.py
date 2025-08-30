@@ -27,29 +27,32 @@ log = logging.getLogger("cwl-oscar-local")
 class OSCARLocalRunner:
     """Local runner for CWL workflows on OSCAR infrastructure."""
     
-    def __init__(self, oscar_endpoint, oscar_token=None, oscar_username=None, oscar_password=None, 
-                 mount_path="/mnt/cwl-oscar4/mount", cwl_oscar_service="cwl-oscar4", ssl=True):
+    def __init__(self, clusters, mount_path="/mnt/cwl-oscar/mount", cwl_oscar_service="cwl-oscar", 
+                 shared_minio_config=None):
         """
         Initialize the local runner.
         
         Args:
-            oscar_endpoint: OSCAR cluster endpoint URL
-            oscar_token: OSCAR OIDC authentication token
-            oscar_username: OSCAR username for basic authentication  
-            oscar_password: OSCAR password for basic authentication
+            clusters: List of cluster configurations for multi-cluster support
             mount_path: Mount path for shared data
             cwl_oscar_service: Name of the cwl-oscar service
-            ssl: Enable SSL/TLS for OSCAR communication (default: True)
+            shared_minio_config: Shared MinIO configuration for multi-cluster support
         """
-        self.oscar_endpoint = oscar_endpoint
-        self.oscar_token = oscar_token
-        self.oscar_username = oscar_username
-        self.oscar_password = oscar_password
+        self.clusters = clusters
+        self.primary_cluster = clusters[0]  # Use first cluster for service operations
+            
         self.mount_path = mount_path
         self.cwl_oscar_service = cwl_oscar_service
-        self.ssl = ssl
+        self.shared_minio_config = shared_minio_config
         self.client = None
         self.storage_service = None
+        
+        # Expose primary cluster properties for compatibility
+        self.oscar_endpoint = self.primary_cluster['endpoint']
+        self.oscar_token = self.primary_cluster.get('token')
+        self.oscar_username = self.primary_cluster.get('username')
+        self.oscar_password = self.primary_cluster.get('password')
+        self.ssl = self.primary_cluster.get('ssl', True)
         
     def get_client(self):
         """Get or create OSCAR client."""
@@ -171,17 +174,30 @@ class OSCARLocalRunner:
         """
         script_content = "#!/bin/bash\n\n"
         script_content += "/usr/local/bin/python /app/cwl-oscar \\\n"
-        script_content += f"  --oscar-endpoint {self.oscar_endpoint} \\\n"
         
-        if self.oscar_token:
-            script_content += f"  --oscar-token {self.oscar_token} \\\n"
-        else:
-            script_content += f"  --oscar-username {self.oscar_username} \\\n"
-            script_content += f"  --oscar-password {self.oscar_password} \\\n"
+        # Add cluster configurations
+        for cluster in self.clusters:
+            script_content += f"  --cluster-endpoint {cluster['endpoint']} \\\n"
+            if cluster.get('token'):
+                script_content += f"  --cluster-token {cluster['token']} \\\n"
+            else:
+                script_content += f"  --cluster-username {cluster['username']} \\\n"
+                script_content += f"  --cluster-password {cluster['password']} \\\n"
+            if not cluster.get('ssl', True):
+                script_content += f"  --cluster-disable-ssl \\\n"
+        
+        # Add shared MinIO configuration for multi-cluster
+        if len(self.clusters) > 1 and self.shared_minio_config:
+            script_content += f"  --shared-minio-endpoint {self.shared_minio_config['endpoint']} \\\n"
+            script_content += f"  --shared-minio-access-key {self.shared_minio_config['access_key']} \\\n"
+            script_content += f"  --shared-minio-secret-key {self.shared_minio_config['secret_key']} \\\n"
+            if self.shared_minio_config.get('region'):
+                script_content += f"  --shared-minio-region {self.shared_minio_config['region']} \\\n"
+            if self.shared_minio_config.get('verify_ssl', True):
+                script_content += f"  --shared-minio-verify-ssl \\\n"
             
         script_content += f"  --mount-path {self.mount_path} \\\n"
-        script_content += f"  --quiet \\\n"
-        # script_content += f"  --service-name clt4 \\\n"
+        script_content += f"  --service-name {self.cwl_oscar_service} \\\n"
         
         if additional_args:
             for arg in additional_args:
@@ -375,7 +391,7 @@ class OSCARLocalRunner:
         storage_service = self.get_storage_service()
         
         out_provider = service_config['output'][0]['storage_provider']
-        out_path = service_config['output'][0]['path']  # e.g., "cwl-oscar4/out"
+        out_path = service_config['output'][0]['path']  # e.g., "cwl-oscar/out"
         
         log.info("Downloading results to: %s", output_dir)
         
@@ -396,8 +412,8 @@ class OSCARLocalRunner:
                         
                         # Construct full download path
                         # The file_key is relative to bucket root, but we need the full path
-                        # out_path is like "cwl-oscar4/out", file_key is like "out/filename"
-                        # We need to combine them properly to get "cwl-oscar4/out/filename"
+                        # out_path is like "cwl-oscar/out", file_key is like "out/filename"
+                        # We need to combine them properly to get "cwl-oscar/out/filename"
                         if file_key.startswith('out/'):
                             # Remove 'out/' prefix and combine with service out path
                             file_only = file_key[4:]  # Remove 'out/' prefix
@@ -529,35 +545,162 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Run local CWL workflows on OSCAR')
+    
+    # Positional arguments
     parser.add_argument('workflow', help='Path to CWL workflow file')
     parser.add_argument('input', help='Path to input YAML/JSON file')
-    parser.add_argument('--oscar-endpoint', required=True, help='OSCAR endpoint URL')
-    parser.add_argument('--oscar-token', help='OSCAR OIDC token')
-    parser.add_argument('--oscar-username', help='OSCAR username')
-    parser.add_argument('--oscar-password', help='OSCAR password')
-    parser.add_argument('--mount-path', default='/mnt/cwl-oscar4/mount', help='Mount path')
-    parser.add_argument('--service-name', default='cwl-oscar4', help='CWL-OSCAR service name')
+    
+    # Multi-cluster support
+    parser.add_argument("--cluster-endpoint", type=str, action='append',
+                        help="OSCAR cluster endpoint URL (can be specified multiple times for multiple clusters)")
+    parser.add_argument("--cluster-token", type=str, action='append',
+                        help="OSCAR OIDC authentication token for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-username", type=str, action='append',
+                        help="OSCAR username for basic authentication for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-password", type=str, action='append',
+                        help="OSCAR password for basic authentication for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-disable-ssl", action='append_const', const=True,
+                        help="Disable SSL verification for corresponding cluster (can be specified multiple times)")
+    
+    # Shared MinIO bucket configuration for multi-cluster support
+    parser.add_argument("--shared-minio-endpoint", type=str,
+                        help="Shared MinIO endpoint URL for multi-cluster support (all clusters will use this bucket)")
+    parser.add_argument("--shared-minio-access-key", type=str,
+                        help="Shared MinIO access key for multi-cluster support")
+    parser.add_argument("--shared-minio-secret-key", type=str,
+                        help="Shared MinIO secret key for multi-cluster support")
+    parser.add_argument("--shared-minio-region", type=str,
+                        help="Shared MinIO region for multi-cluster support")
+    parser.add_argument("--shared-minio-verify-ssl", action="store_true", default=True,
+                        help="Verify SSL certificates for shared MinIO (default: true)")
+    
+    # Execution configuration
+    parser.add_argument('--mount-path', default='/mnt/cwl-oscar/mount', help='Mount path for shared data')
+    parser.add_argument('--service-name', default='cwl-oscar', help='CWL-OSCAR service name')
     parser.add_argument('--output-dir', default='./results', help='Output directory')
     parser.add_argument('--timeout', type=int, default=600, help='Timeout in seconds')
     parser.add_argument('--additional-files', nargs='*', help='Additional files to upload')
-    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-    parser.add_argument('--disable-ssl', action='store_true', help='Disable verification of SSL certificates for the cluster service')
+    
+    # Execution options
+    parser.add_argument('--parallel', action='store_true', help='Enable parallel execution')
+    parser.add_argument('--on-error', choices=['stop', 'continue'], default='stop',
+                        help='Desired workflow behavior when a step fails')
+    parser.add_argument('--compute-checksum', action='store_true', default=True,
+                        help='Compute checksum of contents while collecting outputs')
+    parser.add_argument('--no-compute-checksum', action='store_false', dest='compute_checksum',
+                        help='Do not compute checksum of contents while collecting outputs')
+    parser.add_argument('--default-container', help='Specify a default docker container')
+    parser.add_argument('--timestamps', action='store_true', help='Add timestamps to the errors, warnings, and notifications')
+    
+    # Logging options
+    logging_group = parser.add_mutually_exclusive_group()
+    logging_group.add_argument('--verbose', action='store_true', help='Default logging')
+    logging_group.add_argument('--quiet', action='store_true', help='Only print warnings and errors')
+    logging_group.add_argument('--debug', action='store_true', help='Print even more logging')
     
     args = parser.parse_args()
     
+    # Parse multi-cluster configuration
+    clusters = []
+    if args.cluster_endpoint:
+        endpoint_count = len(args.cluster_endpoint)
+        
+        # Ensure we have matching counts for authentication
+        if args.cluster_token:
+            if len(args.cluster_token) != endpoint_count:
+                print("Error: Number of --cluster-token arguments must match --cluster-endpoint arguments")
+                return 1
+        if args.cluster_username:
+            if len(args.cluster_username) != endpoint_count:
+                print("Error: Number of --cluster-username arguments must match --cluster-endpoint arguments")
+                return 1
+        if args.cluster_password:
+            if len(args.cluster_password) != endpoint_count:
+                print("Error: Number of --cluster-password arguments must match --cluster-endpoint arguments")
+                return 1
+        if args.cluster_disable_ssl:
+            if len(args.cluster_disable_ssl) != endpoint_count:
+                print("Error: Number of --cluster-disable-ssl arguments must match --cluster-endpoint arguments")
+                return 1
+        
+        # Build cluster configurations
+        for i in range(endpoint_count):
+            cluster = {
+                'endpoint': args.cluster_endpoint[i],
+                'token': args.cluster_token[i] if args.cluster_token else None,
+                'username': args.cluster_username[i] if args.cluster_username else None,
+                'password': args.cluster_password[i] if args.cluster_password else None,
+                'ssl': not (args.cluster_disable_ssl and args.cluster_disable_ssl[i])
+            }
+            
+            # Validate authentication for this cluster
+            if not cluster['token'] and not cluster['username']:
+                print(f"Error: cluster {i+1} requires either --cluster-token or --cluster-username")
+                return 1
+            if cluster['username'] and not cluster['password']:
+                print(f"Error: cluster {i+1} needs --cluster-password when using --cluster-username")
+                return 1
+            
+            clusters.append(cluster)
+    
+    # Handle shared MinIO configuration
+    shared_minio_config = None
+    if len(clusters) > 1:
+        # Multi-cluster mode requires shared MinIO bucket
+        if not args.shared_minio_endpoint:
+            print("Error: --shared-minio-endpoint is required for multi-cluster mode")
+            return 1
+        if not args.shared_minio_access_key or not args.shared_minio_secret_key:
+            print("Error: --shared-minio-access-key and --shared-minio-secret-key are required for multi-cluster mode")
+            return 1
+        
+        shared_minio_config = {
+            'endpoint': args.shared_minio_endpoint,
+            'access_key': args.shared_minio_access_key,
+            'secret_key': args.shared_minio_secret_key,
+            'region': args.shared_minio_region,
+            'verify_ssl': args.shared_minio_verify_ssl
+        }
+    elif args.cluster_endpoint:
+        print("Single cluster mode - using default cluster MinIO bucket")
+    
+    # Require cluster configuration
+    if not clusters:
+        print("Error: --cluster-endpoint is required (at least one cluster must be specified)")
+        return 1
+    
     # Set up logging
-    level = logging.DEBUG if args.debug else logging.INFO
+    if args.quiet:
+        level = logging.WARNING
+    elif args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Prepare additional arguments to pass to cwl-oscar
+    additional_args = []
+    if args.quiet:
+        additional_args.append('--quiet')
+    elif args.debug:
+        additional_args.append('--debug')
+    if args.parallel:
+        additional_args.append('--parallel')
+    if args.on_error != 'stop':
+        additional_args.extend(['--on-error', args.on_error])
+    if not args.compute_checksum:
+        additional_args.append('--no-compute-checksum')
+    if args.default_container:
+        additional_args.extend(['--default-container', args.default_container])
+    if args.timestamps:
+        additional_args.append('--timestamps')
     
     # Create runner
     runner = OSCARLocalRunner(
-        oscar_endpoint=args.oscar_endpoint,
-        oscar_token=args.oscar_token,
-        oscar_username=args.oscar_username,
-        oscar_password=args.oscar_password,
+        clusters=clusters,
         mount_path=args.mount_path,
         cwl_oscar_service=args.service_name,
-        ssl=not args.disable_ssl
+        shared_minio_config=shared_minio_config
     )
     
     # Run workflow
@@ -565,6 +708,7 @@ def main():
         workflow_path=args.workflow,
         input_path=args.input,
         additional_files=args.additional_files,
+        additional_args=additional_args,
         output_dir=args.output_dir,
         timeout_seconds=args.timeout
     )
@@ -572,10 +716,10 @@ def main():
     if success:
         print(f"✅ Workflow completed successfully")
         print(f"📁 Results in: {results_dir}")
-        exit(0)
+        return 0
     else:
         print("❌ Workflow execution failed")
-        exit(1)
+        return 1
 
 
 if __name__ == "__main__":
