@@ -345,7 +345,7 @@ The executor sets the following environment variables for OSCAR jobs:
 
 1. **Navigate to the project root and activate virtual environment:**
    ```bash
-   cd /path/to/cwl2oscar
+   cd /path/to/cwl-oscar
    
    # Create virtual environment (if not exists)
    python -m venv .venv

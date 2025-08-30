@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Set metadata
-LABEL maintainer="cwl2oscar contributors"
+LABEL maintainer="CWL-OSCAR contributors"
 LABEL description="CWL executor for OSCAR clusters"
 LABEL version="0.1.0"
 

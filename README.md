@@ -1,4 +1,4 @@
-# cwl2oscar
+# CWL-OSCAR
 
 A repository containing tools for converting and executing Common Workflow Language (CWL) workflows with OSCAR clusters.
 
@@ -21,7 +21,7 @@ A repository containing tools for converting and executing Common Workflow Langu
 1. **Clone the repository:**
    ```bash
    git clone <repository-url>
-   cd cwl2oscar
+   cd cwl-oscar
    ```
 
 2. **Create and activate a virtual environment:**
