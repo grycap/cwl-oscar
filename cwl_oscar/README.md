@@ -76,6 +76,8 @@ chmod +x cwl-oscar
 - `--shared-minio-endpoint`: Shared MinIO endpoint for multi-cluster support
 - `--shared-minio-access-key`: Shared MinIO access key for multi-cluster support
 - `--shared-minio-secret-key`: Shared MinIO secret key for multi-cluster support
+- `--shared-minio-region`: Shared MinIO region for multi-cluster support
+- `--shared-minio-disable-ssl`: Disable SSL certificate verification for shared MinIO
 - `--parallel`: Enable parallel execution
 - `--debug`: Enable detailed debug logging
 
@@ -165,6 +167,51 @@ export CLUSTER_TOKEN=YOUR_TOKEN  # OR set CLUSTER_USERNAME and CLUSTER_PASSWORD
            --cluster-username YOUR_USERNAME \
            --cluster-password YOUR_PASSWORD \
            --debug \
+           workflow.cwl inputs.json
+```
+
+### SSL Configuration
+
+By default, SSL certificate verification is enabled for both OSCAR clusters and shared MinIO storage. You can disable SSL verification when working with self-signed certificates or in development environments.
+
+**Disable SSL for specific clusters:**
+```bash
+# Mixed SSL configuration: secure cluster + insecure cluster
+./cwl-oscar --cluster-endpoint https://secure-cluster.com \
+           --cluster-token TOKEN1 \
+           --cluster-endpoint https://insecure-cluster.local \
+           --cluster-token TOKEN2 \
+           --cluster-disable-ssl \
+           --shared-minio-endpoint https://minio.shared.com \
+           --shared-minio-access-key ACCESS_KEY \
+           --shared-minio-secret-key SECRET_KEY \
+           workflow.cwl inputs.json
+```
+
+**Disable SSL for shared MinIO:**
+```bash
+# Secure clusters with insecure MinIO storage
+./cwl-oscar --cluster-endpoint https://cluster1.com \
+           --cluster-token TOKEN1 \
+           --cluster-endpoint https://cluster2.com \
+           --cluster-token TOKEN2 \
+           --shared-minio-endpoint https://minio.local \
+           --shared-minio-access-key ACCESS_KEY \
+           --shared-minio-secret-key SECRET_KEY \
+           --shared-minio-disable-ssl \
+           workflow.cwl inputs.json
+```
+
+**Disable SSL for everything (development/testing only):**
+```bash
+# WARNING: Only use in development/testing environments
+./cwl-oscar --cluster-endpoint https://dev-cluster.local \
+           --cluster-token DEV_TOKEN \
+           --cluster-disable-ssl \
+           --shared-minio-endpoint https://dev-minio.local \
+           --shared-minio-access-key DEV_ACCESS \
+           --shared-minio-secret-key DEV_SECRET \
+           --shared-minio-disable-ssl \
            workflow.cwl inputs.json
 ```
 

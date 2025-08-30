@@ -73,6 +73,11 @@ python cwl_oscar/local_runner.py \
 - `--shared-minio-access-key`: MinIO access key
 - `--shared-minio-secret-key`: MinIO secret key
 - `--shared-minio-region`: MinIO region (optional)
+- `--shared-minio-disable-ssl`: Disable SSL verification for MinIO
+
+### SSL Configuration
+- `--cluster-disable-ssl`: Disable SSL verification for corresponding cluster
+- `--shared-minio-disable-ssl`: Disable SSL verification for shared MinIO storage
 
 ## Examples
 
@@ -113,6 +118,49 @@ python cwl_oscar/local_runner.py \
   inputs/complex-input.json
 ```
 
+### SSL Configuration Examples
+
+**Disable SSL for development cluster:**
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://dev-cluster.local \
+  --cluster-token dev-token \
+  --cluster-disable-ssl \
+  cwl_oscar/example/hello.cwl \
+  cwl_oscar/example/input_hello.json
+```
+
+**Mixed SSL configuration (secure + insecure clusters):**
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://secure-cluster.com \
+  --cluster-token secure-token \
+  --cluster-endpoint https://insecure-cluster.local \
+  --cluster-token insecure-token \
+  --cluster-disable-ssl \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  cwl_oscar/example/workflow.cwl \
+  cwl_oscar/example/input.json
+```
+
+**Disable SSL for shared MinIO only:**
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://cluster1.com \
+  --cluster-token token1 \
+  --cluster-endpoint https://cluster2.com \
+  --cluster-token token2 \
+  --shared-minio-endpoint https://minio.local \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  --shared-minio-disable-ssl \
+  --debug \
+  workflows/multi-cluster.cwl \
+  inputs/multi-cluster-input.json
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -128,6 +176,11 @@ python cwl_oscar/local_runner.py \
 
 **"404 Client Error: Not Found"**
 - Solution: Check your OSCAR endpoint URL is correct and accessible
+
+**"SSL Certificate verification failed" or "SSL: CERTIFICATE_VERIFY_FAILED"**
+- Solution: Use `--cluster-disable-ssl` to disable SSL verification for development/testing
+- Solution: Use `--shared-minio-disable-ssl` to disable SSL verification for MinIO storage
+- Note: Only disable SSL verification in development/testing environments
 
 ### Debug Mode
 
