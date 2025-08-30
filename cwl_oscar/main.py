@@ -201,7 +201,7 @@ def main(args=None):
             'access_key': parsed_args.shared_minio_access_key,
             'secret_key': parsed_args.shared_minio_secret_key,
             'region': parsed_args.shared_minio_region,
-            'verify_ssl': parsed_args.shared_minio_verify_ssl
+            'verify_ssl': not parsed_args.shared_minio_disable_ssl
         }
         log.info("Shared MinIO bucket configured: %s", parsed_args.shared_minio_endpoint)
     else:
@@ -306,8 +306,8 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
                         help="Shared MinIO secret key for multi-cluster support")
     parser.add_argument("--shared-minio-region", type=str,
                         help="Shared MinIO region for multi-cluster support")
-    parser.add_argument("--shared-minio-verify-ssl", action="store_true", default=True,
-                        help="Verify SSL certificates for shared MinIO (default: true)")
+    parser.add_argument("--shared-minio-disable-ssl", action="store_true", default=False,
+                        help="Disable SSL certificate verification for shared MinIO")
     
     parser.add_argument("--mount-path", type=str,
                         default=DEFAULT_MOUNT_PATH,

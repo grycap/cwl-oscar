@@ -204,8 +204,8 @@ class OSCARLocalRunner:
             script_content += f"  --shared-minio-secret-key {self.shared_minio_config['secret_key']} \\\n"
             if self.shared_minio_config.get('region'):
                 script_content += f"  --shared-minio-region {self.shared_minio_config['region']} \\\n"
-            if self.shared_minio_config.get('verify_ssl', True):
-                script_content += f"  --shared-minio-verify-ssl \\\n"
+            if not self.shared_minio_config.get('verify_ssl', True):
+                script_content += f"  --shared-minio-disable-ssl \\\n"
             
         script_content += f"  --mount-path {self.mount_path} \\\n"
         script_content += f"  --service-name {self.cwl_oscar_service} \\\n"
@@ -582,8 +582,8 @@ def main():
                         help="Shared MinIO secret key for multi-cluster support")
     parser.add_argument("--shared-minio-region", type=str,
                         help="Shared MinIO region for multi-cluster support")
-    parser.add_argument("--shared-minio-verify-ssl", action="store_true", default=True,
-                        help="Verify SSL certificates for shared MinIO (default: true)")
+    parser.add_argument("--shared-minio-disable-ssl", action="store_true", default=False,
+                        help="Disable SSL certificate verification for shared MinIO")
     
     # Execution configuration
     parser.add_argument('--mount-path', default='/mnt/cwl-oscar/mount', help='Mount path for shared data')
@@ -670,7 +670,7 @@ def main():
             'access_key': args.shared_minio_access_key,
             'secret_key': args.shared_minio_secret_key,
             'region': args.shared_minio_region,
-            'verify_ssl': args.shared_minio_verify_ssl
+            'verify_ssl': not args.shared_minio_disable_ssl
         }
     elif args.cluster_endpoint:
         print("Single cluster mode - using default cluster MinIO bucket")
