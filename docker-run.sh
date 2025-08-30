@@ -42,13 +42,13 @@ print_usage() {
 
 build_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image (current platform)...${NC}"
-    docker build -t "$DOCKER_IMAGE" .
+    docker build --no-cache -t "$DOCKER_IMAGE" .
     echo -e "${GREEN}✓ Image built successfully: $DOCKER_IMAGE${NC}"
 }
 
 build_linux_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image for linux/amd64...${NC}"
-    docker build --platform linux/amd64 -t "cwl-oscar:linux-amd64" .
+    docker build --platform linux/amd64 --no-cache -t "cwl-oscar:linux-amd64" .
     
     # Also tag as latest for convenience
     docker tag "cwl-oscar:linux-amd64" "$DOCKER_IMAGE"
@@ -80,6 +80,7 @@ build_multi_platform() {
     # Build for multiple platforms
     docker buildx build \
         --platform linux/amd64,linux/arm64 \
+        --no-cache \
         -t "cwl-oscar:multi-platform" \
         --load \
         .
@@ -114,6 +115,7 @@ build_and_push_multiplatform() {
     # Build and push for multiple platforms
     docker buildx build \
         --platform linux/amd64,linux/arm64 \
+        --no-cache \
         -t "$REMOTE_TAG" \
         --push \
         .
