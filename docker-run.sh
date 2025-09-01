@@ -51,7 +51,7 @@ EOF
 }
 
 print_usage() {
-    echo "Usage: $0 [--registry REGISTRY] {build|build-linux|build-multi|run|test|security-check|push|pull|examples|help}"
+    echo "Usage: $0 [--registry REGISTRY] {build|build-linux|build-multi|build-push-multi|run|test|security-check|push|pull|examples|help}"
     echo ""
     echo "Options:"
     echo "  --registry REGISTRY   - Set Docker registry (default: $DEFAULT_DOCKER_REGISTRY)"
@@ -61,6 +61,7 @@ print_usage() {
     echo "  build         - Build the cwl-oscar Docker image (current platform)"
     echo "  build-linux   - Build specifically for linux/amd64"
     echo "  build-multi   - Build for multiple platforms (linux/amd64, linux/arm64)"
+    echo "  build-push-multi - Build and push multi-platform image to registry"
     echo "  run           - Run cwl-oscar with your arguments"
     echo "  test          - Run basic tests to verify the image works"
     echo "  security-check- Check for sensitive files in Docker build context"
@@ -74,6 +75,7 @@ print_usage() {
     echo "  $0 build-linux                              # Build for Linux AMD64 (default registry)"
     echo "  $0 --registry myuser build-multi            # Build for multiple platforms with custom registry"
     echo "  $0 --registry=company/project push          # Push to custom registry"
+    echo "  $0 build-push-multi                         # Build and push multi-platform image to registry"
     echo "  $0 security-check                           # Check for sensitive files"
     echo "  $0 run --help"
     echo "  $0 run --cluster-endpoint https://oscar.example.com --cluster-token TOKEN workflow.cwl input.json"
@@ -314,6 +316,7 @@ show_examples() {
     echo "   $0 build           # Build for current platform"
     echo "   $0 build-linux     # Build specifically for linux/amd64"
     echo "   $0 build-multi     # Build for linux/amd64 + linux/arm64"
+    echo "   $0 build-push-multi# Build and push multi-platform image to registry"
     echo ""
     echo -e "${YELLOW}1. Run with OSCAR token authentication:${NC}"
     echo "   $0 run --cluster-endpoint https://oscar.example.com \\"
