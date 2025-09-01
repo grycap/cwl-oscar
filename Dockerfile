@@ -36,6 +36,9 @@ COPY cwl_oscar/ ./cwl_oscar/
 COPY cwl-oscar .
 COPY README.md .
 
+# Create placeholder for build info file (will be populated by docker-run.sh)
+RUN touch ./cwl_oscar/.build_info
+
 # Make the main script executable
 RUN chmod +x cwl-oscar
 

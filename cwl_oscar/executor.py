@@ -67,7 +67,7 @@ class OSCARExecutor:
                 
         return self.service_config
         
-    def create_command_script(self, command, environment, working_directory, stdout_file=None, output_dir=".", job_id=None):
+    def create_command_script(self, command, environment, working_directory, stdout_file=None, output_dir=".", job_id=None, tool_spec=None):
         """Create a simplified script file with just the CWL command."""
         random_uuid = str(uuid.uuid4())
         job_id = job_id or random_uuid
@@ -93,6 +93,11 @@ class OSCARExecutor:
         script_content += "\n# Use TMP_OUTPUT_DIR as workspace\n"
         script_content += "cd \"$TMP_OUTPUT_DIR\"\n"
         script_content += "echo \"Working in: $TMP_OUTPUT_DIR\"\n\n"
+        
+        # * Handle InitialWorkDirRequirement for inline file creation
+        if tool_spec:
+            script_content += self._generate_initial_work_dir_commands(tool_spec)
+        
         
         # Execute the main command (cwltool handles input/output file management)
         script_content += "# Execute CWL command\n"
@@ -128,6 +133,86 @@ class OSCARExecutor:
         
         log.debug("[job] Created command script: %s with command: %s", script_path, command_line)
         return script_path
+    
+    def _generate_initial_work_dir_commands(self, tool_spec):
+        """Generate bash commands to create files specified in InitialWorkDirRequirement.
+        
+        Args:
+            tool_spec: CWL tool specification dictionary
+            
+        Returns:
+            String containing bash commands to create the required files
+        """
+        if not tool_spec or not isinstance(tool_spec, dict):
+            return ""
+            
+        commands = ""
+        requirements = tool_spec.get('requirements', {})
+        
+        # * Handle requirements as either dict or list format
+        if isinstance(requirements, dict):
+            # CWL v1.2+ format: requirements as dictionary
+            if 'InitialWorkDirRequirement' in requirements:
+                req = requirements['InitialWorkDirRequirement']
+                commands += self._process_initial_work_dir_listing(req.get('listing', []))
+        elif isinstance(requirements, list):
+            # CWL v1.0 format: requirements as list of objects
+            for req in requirements:
+                if isinstance(req, dict) and req.get('class') == 'InitialWorkDirRequirement':
+                    commands += self._process_initial_work_dir_listing(req.get('listing', []))
+        
+        # * Also check hints for InitialWorkDirRequirement
+        hints = tool_spec.get('hints', [])
+        if isinstance(hints, dict):
+            # Hints as dictionary
+            if 'InitialWorkDirRequirement' in hints:
+                hint = hints['InitialWorkDirRequirement']
+                commands += self._process_initial_work_dir_listing(hint.get('listing', []))
+        elif isinstance(hints, list):
+            # Hints as list
+            for hint in hints:
+                if isinstance(hint, dict) and hint.get('class') == 'InitialWorkDirRequirement':
+                    commands += self._process_initial_work_dir_listing(hint.get('listing', []))
+                
+        return commands
+    
+    def _process_initial_work_dir_listing(self, listing):
+        """Process the listing entries from InitialWorkDirRequirement.
+        
+        Args:
+            listing: List of file/directory entries to create
+            
+        Returns:
+            String containing bash commands to create the files
+        """
+        if not listing:
+            return ""
+            
+        commands = "# Create files from InitialWorkDirRequirement\n"
+        
+        for entry in listing:
+            if isinstance(entry, dict):
+                # Handle inline file creation with entryname and entry
+                if 'entryname' in entry and 'entry' in entry:
+                    filename = entry['entryname']
+                    content = entry['entry']
+                    
+                    # * Escape the content for safe inclusion in bash script
+                    # Use here-document (heredoc) to handle multi-line content safely
+                    commands += f"# Creating file: {filename}\n"
+                    commands += f"cat > {shlex.quote(filename)} << 'EOF_CWL_OSCAR'\n"
+                    commands += content
+                    if not content.endswith('\n'):
+                        commands += '\n'
+                    commands += "EOF_CWL_OSCAR\n"
+                    commands += f"echo \"Created file: {filename}\"\n\n"
+                    
+                # TODO: Handle other InitialWorkDirRequirement entry types like:
+                # - File references: {"class": "File", "location": "..."}
+                # - Directory references: {"class": "Directory", "location": "..."}
+                # - Expression entries with valueFrom
+                
+        return commands
         
     def upload_and_wait_for_output(self, local_file_path, timeout_seconds=DEFAULT_UPLOAD_TIMEOUT, check_interval=DEFAULT_CHECK_INTERVAL):
         """Upload a file to OSCAR service and wait for the corresponding output file."""
@@ -285,7 +370,7 @@ class OSCARExecutor:
             
             log.debug(LOG_PREFIX_JOB + " Using job_id: %s", job_name, job_id)
             script_path = self.create_command_script(
-                command, environment, working_directory, stdout_file=stdout_file, output_dir=temp_dir, job_id=job_id
+                command, environment, working_directory, stdout_file=stdout_file, output_dir=temp_dir, job_id=job_id, tool_spec=tool_spec
             )
             
             # Upload script and wait for output

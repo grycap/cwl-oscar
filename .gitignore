@@ -24,3 +24,6 @@ fdl-run-command/command.status
 fdl-run-command/command.output
 fdl-run-command/command.error
 .env
+
+# Build artifacts
+cwl_oscar/.build_info

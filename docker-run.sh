@@ -28,6 +28,28 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# * Function to update build information
+update_build_info() {
+    local build_info_file="cwl_oscar/.build_info"
+    local current_time=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+    local git_revision="unknown"
+    
+    # Try to get git revision
+    if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+        git_revision=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    fi
+    
+    echo -e "${YELLOW}Updating build info: $current_time (git: $git_revision)${NC}"
+    
+    # Create build info file with key=value format
+    cat > "$build_info_file" << EOF
+BUILD_TIME=$current_time
+GIT_REVISION=$git_revision
+EOF
+    
+    echo -e "${GREEN}✓ Created build info file: $build_info_file${NC}"
+}
+
 print_usage() {
     echo "Usage: $0 [--registry REGISTRY] {build|build-linux|build-multi|run|test|security-check|push|pull|examples|help}"
     echo ""
@@ -61,6 +83,10 @@ print_usage() {
 build_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image (current platform)...${NC}"
     echo -e "${YELLOW}Using registry: $DOCKER_REGISTRY${NC}"
+    
+    # * Update build info before building
+    update_build_info
+    
     docker build --no-cache -t "$DOCKER_IMAGE" .
     echo -e "${GREEN}✓ Image built successfully: $DOCKER_IMAGE${NC}"
 }
@@ -68,6 +94,10 @@ build_image() {
 build_linux_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image for linux/amd64...${NC}"
     echo -e "${YELLOW}Using registry: $DOCKER_REGISTRY${NC}"
+    
+    # * Update build info before building
+    update_build_info
+    
     docker build --platform linux/amd64 --no-cache -t "cwl-oscar:linux-amd64" .
     
     # Also tag as latest for convenience
@@ -87,6 +117,9 @@ build_linux_image() {
 build_multi_platform() {
     echo -e "${BLUE}Building cwl-oscar Docker image for multiple platforms...${NC}"
     echo -e "${YELLOW}This will build for linux/amd64 and linux/arm64${NC}"
+    
+    # * Update build info before building
+    update_build_info
     
     # Create or use existing buildx builder
     if ! docker buildx inspect multiplatform-builder >/dev/null 2>&1; then
@@ -126,6 +159,9 @@ build_multi_platform() {
 build_and_push_multiplatform() {
     
     echo -e "${BLUE}Building and pushing multi-platform image to registry...${NC}"
+    
+    # * Update build info before building
+    update_build_info
     
     REMOTE_TAG="$DOCKER_REGISTRY/cwl-oscar:latest"
     
