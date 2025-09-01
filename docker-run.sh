@@ -5,8 +5,21 @@
 
 set -e
 
+# Default values
+DEFAULT_DOCKER_REGISTRY="robertbio"
+DOCKER_REGISTRY="${DEFAULT_DOCKER_REGISTRY}"
 DOCKER_IMAGE="cwl-oscar:latest"
-DOCKER_REGISTRY="robertbio"  # Docker Hub username
+
+# Parse registry parameter if provided
+if [[ "$1" == "--registry" ]] && [[ -n "$2" ]]; then
+    DOCKER_REGISTRY="$2"
+    shift 2  # Remove --registry and its value from arguments
+    echo "Using custom registry: $DOCKER_REGISTRY"
+elif [[ "$1" == --registry=* ]]; then
+    DOCKER_REGISTRY="${1#--registry=}"
+    shift    # Remove --registry=value from arguments
+    echo "Using custom registry: $DOCKER_REGISTRY"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,7 +29,11 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 print_usage() {
-    echo "Usage: $0 {build|build-linux|build-multi|run|test|security-check|push|pull|examples|help}"
+    echo "Usage: $0 [--registry REGISTRY] {build|build-linux|build-multi|run|test|security-check|push|pull|examples|help}"
+    echo ""
+    echo "Options:"
+    echo "  --registry REGISTRY   - Set Docker registry (default: $DEFAULT_DOCKER_REGISTRY)"
+    echo "                         Can also use --registry=REGISTRY format"
     echo ""
     echo "Commands:"
     echo "  build         - Build the cwl-oscar Docker image (current platform)"
@@ -32,9 +49,10 @@ print_usage() {
     echo "  help          - Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 build-linux                    # Build for Linux AMD64"
-    echo "  $0 build-multi                    # Build for multiple platforms"
-    echo "  $0 security-check                 # Check for sensitive files"
+    echo "  $0 build-linux                              # Build for Linux AMD64 (default registry)"
+    echo "  $0 --registry myuser build-multi            # Build for multiple platforms with custom registry"
+    echo "  $0 --registry=company/project push          # Push to custom registry"
+    echo "  $0 security-check                           # Check for sensitive files"
     echo "  $0 run --help"
     echo "  $0 run --cluster-endpoint https://oscar.example.com --cluster-token TOKEN workflow.cwl input.json"
     echo "  $0 test"
@@ -42,22 +60,24 @@ print_usage() {
 
 build_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image (current platform)...${NC}"
+    echo -e "${YELLOW}Using registry: $DOCKER_REGISTRY${NC}"
     docker build --no-cache -t "$DOCKER_IMAGE" .
     echo -e "${GREEN}✓ Image built successfully: $DOCKER_IMAGE${NC}"
 }
 
 build_linux_image() {
     echo -e "${BLUE}Building cwl-oscar Docker image for linux/amd64...${NC}"
+    echo -e "${YELLOW}Using registry: $DOCKER_REGISTRY${NC}"
     docker build --platform linux/amd64 --no-cache -t "cwl-oscar:linux-amd64" .
     
     # Also tag as latest for convenience
     docker tag "cwl-oscar:linux-amd64" "$DOCKER_IMAGE"
     
-    # Tag for pushing to Docker Hub
-    docker tag "cwl-oscar:linux-amd64" "robertbio/cwl-oscar:linux-amd64"
+    # Tag for pushing to registry
+    docker tag "cwl-oscar:linux-amd64" "$DOCKER_REGISTRY/cwl-oscar:linux-amd64"
     
     echo -e "${GREEN}✓ Linux AMD64 image built successfully${NC}"
-    echo -e "${BLUE}Tagged as: cwl-oscar:linux-amd64, $DOCKER_IMAGE, and robertbio/cwl-oscar:linux-amd64${NC}"
+    echo -e "${BLUE}Tagged as: cwl-oscar:linux-amd64, $DOCKER_IMAGE, and $DOCKER_REGISTRY/cwl-oscar:linux-amd64${NC}"
     
     # Show image details
     echo -e "${YELLOW}Image details:${NC}"
@@ -186,7 +206,27 @@ test_image() {
 }
 
 push_image() {
-    echo -e "${BLUE}Pushing multiplatform images to Docker Hub...${NC}"
+    echo -e "${BLUE}Pushing multiplatform images to registry: $DOCKER_REGISTRY${NC}"
+    
+    # Check if user is logged in to Docker registry
+    if ! docker info | grep -q "Username:"; then
+        echo -e "${YELLOW}Warning: You don't appear to be logged in to Docker registry.${NC}"
+        echo -e "${YELLOW}Please run: docker login${NC}"
+        echo -e "${YELLOW}Or if using a different registry: docker login your-registry.com${NC}"
+        read -p "Do you want to continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${RED}Push cancelled. Please login first.${NC}"
+            exit 1
+        fi
+    else
+        CURRENT_USER=$(docker info | grep "Username:" | awk '{print $2}')
+        echo -e "${GREEN}✓ Logged in as: $CURRENT_USER${NC}"
+        if [[ "$CURRENT_USER" != "$DOCKER_REGISTRY" ]] && [[ "$DOCKER_REGISTRY" != *"/"* ]]; then
+            echo -e "${YELLOW}Warning: Logged in as '$CURRENT_USER' but pushing to '$DOCKER_REGISTRY'${NC}"
+            echo -e "${YELLOW}Make sure you have permission to push to this registry.${NC}"
+        fi
+    fi
     
     # Check if we have multiplatform images
     if docker image inspect "$DOCKER_REGISTRY/cwl-oscar:amd64" >/dev/null 2>&1 && \

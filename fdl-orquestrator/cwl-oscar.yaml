@@ -1,6 +1,6 @@
 functions:
   oscar:
-  - grnet:
+  - oscar:
       name: cwl-oscar
       memory: 1Gi
       cpu: '1.0'
