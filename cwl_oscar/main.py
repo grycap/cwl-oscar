@@ -277,11 +277,11 @@ def main(args=None):
     
     # Configure cwltool to not use colors by setting up a plain formatter
     try:
-        import cwltool.loghandler
+        from cwltool import loghandler as cwltool_loghandler
         # Create a plain formatter without colors
         plain_formatter = logging.Formatter('%(levelname)s %(message)s')
-        if hasattr(cwltool.loghandler, 'defaultStreamHandler'):
-            cwltool.loghandler.defaultStreamHandler.setFormatter(plain_formatter)
+        if hasattr(cwltool_loghandler, 'defaultStreamHandler'):
+            cwltool_loghandler.defaultStreamHandler.setFormatter(plain_formatter)
     except (ImportError, AttributeError):
         # If cwltool structure is different, the environment variables should still work
         pass
