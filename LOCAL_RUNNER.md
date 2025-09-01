@@ -50,12 +50,34 @@ python cwl_oscar/local_runner.py \
   cwl_oscar/example/input.json
 ```
 
+### Step-to-Cluster Mapping
+
+Assign specific workflow steps to specific clusters for optimized resource usage:
+
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://cpu-cluster.example.com \
+  --cluster-token cpu-token \
+  --cluster-steps create_file,data_prep \
+  --cluster-endpoint https://gpu-cluster.example.com \
+  --cluster-token gpu-token \
+  --cluster-steps classify,training \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  cwl_oscar/example/workflow.cwl \
+  cwl_oscar/example/input.json
+```
+
+This will execute `create_file` and `data_prep` steps on the CPU cluster, and `classify` and `training` steps on the GPU cluster.
+
 ## Common Options
 
 ### Authentication
 - `--cluster-endpoint`: OSCAR cluster URL (required, can specify multiple)
 - `--cluster-token`: OIDC token for authentication
 - `--cluster-username` / `--cluster-password`: Basic authentication
+- `--cluster-steps`: Comma-separated list of workflow steps to execute on corresponding cluster
 
 ### Execution
 - `--parallel`: Enable parallel execution
@@ -118,6 +140,46 @@ python cwl_oscar/local_runner.py \
   inputs/complex-input.json
 ```
 
+### Step-to-Cluster Mapping Examples
+
+**Image Processing Workflow (CPU vs GPU):**
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://cpu-cluster.example.com \
+  --cluster-token cpu-token \
+  --cluster-steps grayify,resize \
+  --cluster-endpoint https://gpu-cluster.example.com \
+  --cluster-token gpu-token \
+  --cluster-steps classify,enhance \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  --parallel \
+  workflows/image-processing.cwl \
+  inputs/image-input.json
+```
+
+**Data Pipeline with Specialized Clusters:**
+```bash
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://preprocessing-cluster.org \
+  --cluster-token prep-token \
+  --cluster-steps data_cleaning,normalization,feature_extraction \
+  --cluster-endpoint https://ml-cluster.org \
+  --cluster-token ml-token \
+  --cluster-steps training,validation,prediction \
+  --cluster-endpoint https://postprocessing-cluster.org \
+  --cluster-token post-token \
+  --cluster-steps visualization,reporting \
+  --shared-minio-endpoint https://storage.shared.org \
+  --shared-minio-access-key SHARED_ACCESS \
+  --shared-minio-secret-key SHARED_SECRET \
+  --debug \
+  --timeout 1800 \
+  workflows/ml-pipeline.cwl \
+  inputs/ml-input.json
+```
+
 ### SSL Configuration Examples
 
 **Disable SSL for development cluster:**
@@ -173,6 +235,9 @@ python cwl_oscar/local_runner.py \
 
 **"Error: --shared-minio-endpoint is required for multi-cluster mode"**
 - Solution: Configure shared MinIO when using multiple clusters
+
+**"Error: Number of --cluster-steps arguments must match --cluster-endpoint arguments"**
+- Solution: Provide --cluster-steps for each cluster endpoint, or omit it entirely for round-robin scheduling
 
 **"404 Client Error: Not Found"**
 - Solution: Check your OSCAR endpoint URL is correct and accessible

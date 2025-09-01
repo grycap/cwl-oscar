@@ -79,12 +79,26 @@ Run workflows from local files on remote OSCAR clusters:
 # Install dependencies
 pip install -r requirements.txt
 
-# Run a workflow
+# Run a workflow on single cluster
 python cwl_oscar/local_runner.py \
   --cluster-endpoint YOUR_OSCAR_ENDPOINT \
   --cluster-token YOUR_TOKEN \
   cwl_oscar/example/hello.cwl \
   cwl_oscar/example/input_hello.json
+
+# Run with step-to-cluster mapping (multi-cluster)
+python cwl_oscar/local_runner.py \
+  --cluster-endpoint https://cpu-cluster.example.com \
+  --cluster-token cpu-token \
+  --cluster-steps create_file,data_prep \
+  --cluster-endpoint https://gpu-cluster.example.com \
+  --cluster-token gpu-token \
+  --cluster-steps classify,training \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  cwl_oscar/example/workflow.cwl \
+  cwl_oscar/example/input.json
 ```
 
 ### Option 2: Direct CWL-OSCAR
@@ -95,13 +109,57 @@ Use the main cwl-oscar tool directly from the oscar service:
 # Test installation
 python cwl-oscar --version
 
-# Execute workflow
+# Execute workflow on single cluster
 python cwl-oscar \
   --cluster-endpoint YOUR_OSCAR_ENDPOINT \
   --cluster-token YOUR_TOKEN \
   cwl_oscar/example/hello.cwl \
   cwl_oscar/example/input.json
+
+# Execute with step-to-cluster mapping (multi-cluster)
+python cwl-oscar \
+  --cluster-endpoint https://cpu-cluster.example.com \
+  --cluster-token cpu-token \
+  --cluster-steps create_file,data_prep \
+  --cluster-endpoint https://gpu-cluster.example.com \
+  --cluster-token gpu-token \
+  --cluster-steps classify,training \
+  --shared-minio-endpoint https://minio.shared.com \
+  --shared-minio-access-key ACCESS_KEY \
+  --shared-minio-secret-key SECRET_KEY \
+  cwl_oscar/example/workflow.cwl \
+  cwl_oscar/example/input.json
 ```
+
+## Key Features
+
+### 🎯 Step-to-Cluster Mapping
+
+Assign specific workflow steps to specific clusters for optimized resource usage:
+
+- **CPU-intensive steps** → CPU clusters
+- **GPU-intensive steps** → GPU clusters  
+- **Memory-intensive steps** → High-memory clusters
+- **Unmapped steps** → Automatic round-robin scheduling
+
+**Benefits:**
+- ⚡ **Performance**: Right workload on right hardware
+- 💰 **Cost optimization**: Use expensive resources only when needed
+- 🔄 **Flexibility**: Mix explicit mapping with automatic scheduling
+- 📊 **Resource isolation**: Separate different types of workloads
+
+### 🌐 Multi-Cluster Support
+
+- Execute workflows across multiple OSCAR clusters
+- Shared MinIO storage for seamless data transfer
+- Automatic load balancing with round-robin scheduling
+- SSL configuration per cluster
+
+### 🔧 Execution Modes
+
+- **Local Runner**: Upload local files, execute remotely, download results
+- **Direct Execution**: Run workflows directly on OSCAR infrastructure
+- **Docker Support**: Containerized execution environment
 
 For detailed instructions:
 - [Local Runner Guide](./LOCAL_RUNNER.md) - Simple workflow execution 
@@ -128,11 +186,17 @@ If you prefer using Docker instead of setting up a local Python environment:
                        --cluster-token YOUR_TOKEN \
                        examples/hello.cwl examples/input.json
    
-   # Run a workflow with username/password
-   ./docker-run.sh run --cluster-endpoint YOUR_OSCAR_ENDPOINT \
-                       --cluster-username YOUR_USERNAME \
-                       --cluster-password YOUR_PASSWORD \
-                       examples/hello.cwl examples/input.json
+   # Run with step-to-cluster mapping
+   ./docker-run.sh run --cluster-endpoint https://cpu-cluster.example.com \
+                       --cluster-token cpu-token \
+                       --cluster-steps create_file,data_prep \
+                       --cluster-endpoint https://gpu-cluster.example.com \
+                       --cluster-token gpu-token \
+                       --cluster-steps classify,training \
+                       --shared-minio-endpoint https://minio.shared.com \
+                       --shared-minio-access-key ACCESS_KEY \
+                       --shared-minio-secret-key SECRET_KEY \
+                       examples/workflow.cwl examples/input.json
    ```
 
 3. **Run tests in Docker:**

@@ -196,6 +196,9 @@ class OSCARLocalRunner:
                 script_content += f"  --cluster-password {cluster['password']} \\\n"
             if not cluster.get('ssl', True):
                 script_content += f"  --cluster-disable-ssl \\\n"
+            if cluster.get('steps'):
+                steps_str = ','.join(cluster['steps'])
+                script_content += f"  --cluster-steps {steps_str} \\\n"
         
         # Add shared MinIO configuration for multi-cluster
         if len(self.clusters) > 1 and self.shared_minio_config:
@@ -572,6 +575,8 @@ def main():
                         help="OSCAR password for basic authentication for corresponding cluster (can be specified multiple times)")
     parser.add_argument("--cluster-disable-ssl", action='append_const', const=True,
                         help="Disable SSL verification for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-steps", type=str, action='append',
+                        help="Comma-separated list of workflow steps to execute on corresponding cluster (can be specified multiple times)")
     
     # Shared MinIO bucket configuration for multi-cluster support
     parser.add_argument("--shared-minio-endpoint", type=str,
@@ -633,6 +638,10 @@ def main():
             if len(args.cluster_disable_ssl) != endpoint_count:
                 print("Error: Number of --cluster-disable-ssl arguments must match --cluster-endpoint arguments")
                 return 1
+        if args.cluster_steps:
+            if len(args.cluster_steps) != endpoint_count:
+                print("Error: Number of --cluster-steps arguments must match --cluster-endpoint arguments")
+                return 1
         
         # Build cluster configurations
         for i in range(endpoint_count):
@@ -641,7 +650,8 @@ def main():
                 'token': args.cluster_token[i] if args.cluster_token else None,
                 'username': args.cluster_username[i] if args.cluster_username else None,
                 'password': args.cluster_password[i] if args.cluster_password else None,
-                'ssl': not (args.cluster_disable_ssl and args.cluster_disable_ssl[i])
+                'ssl': not (args.cluster_disable_ssl and args.cluster_disable_ssl[i]),
+                'steps': [step.strip() for step in args.cluster_steps[i].split(',') if step.strip()] if args.cluster_steps else []
             }
             
             # Validate authentication for this cluster
