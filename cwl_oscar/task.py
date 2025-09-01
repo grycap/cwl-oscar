@@ -35,6 +35,31 @@ class OSCARTask(JobBase):
         self.shared_minio_config = shared_minio_config
         
         # We'll create executors dynamically for each cluster as needed
+    
+    def _wait_for_output_directory(self, output_dir, max_retries=5, retry_delay=3):
+        """
+        Wait for output directory to appear with retry logic for shared mount sync.
+        
+        Args:
+            output_dir: Path to the output directory to check
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay in seconds between retries
+            
+        Returns:
+            bool: True if directory exists, False if not found after all retries
+        """
+        for attempt in range(max_retries + 1):  # +1 to include initial attempt
+            if os.path.exists(output_dir):
+                if attempt > 0:
+                    log.info(LOG_PREFIX_JOB + " Output directory found after %d retries: %s", self.name, attempt, output_dir)
+                return True
+            
+            if attempt < max_retries:  # Don't sleep after the last attempt
+                log.debug(LOG_PREFIX_JOB + " Output directory not found (attempt %d/%d), waiting %d seconds: %s", 
+                         self.name, attempt + 1, max_retries + 1, retry_delay, output_dir)
+                time.sleep(retry_delay)
+        
+        return False
         
     def run(self, runtimeContext, tmpdir_lock=None):
         """Execute the job using OSCAR with run-specific workspace."""
@@ -109,8 +134,10 @@ class OSCARTask(JobBase):
                 output_dir = os.path.join(self.mount_path, job_id)
                 log.info(LOG_PREFIX_JOB + " Looking for outputs in: %s (job_id: %s)", self.name, output_dir, job_id)
                 
-                # Check if output directory exists
-                if os.path.exists(output_dir):
+                # * Check if output directory exists with retry logic for shared mount sync
+                output_dir_found = self._wait_for_output_directory(output_dir)
+                
+                if output_dir_found:
                     # Update builder's outdir to point to the correct location
                     original_outdir = self.builder.outdir
                     self.builder.outdir = output_dir
@@ -124,7 +151,7 @@ class OSCARTask(JobBase):
                     
                     log.info(LOG_PREFIX_JOB + " Collected outputs: %s", self.name, outputs)
                 else:
-                    log.warning(LOG_PREFIX_JOB + " Output directory not found: %s", self.name, output_dir)
+                    log.warning(LOG_PREFIX_JOB + " Output directory not found after retries: %s", self.name, output_dir)
                     self.outputs = {}
                     process_status = "permanentFail"
                 

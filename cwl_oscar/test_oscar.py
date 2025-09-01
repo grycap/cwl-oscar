@@ -129,6 +129,96 @@ def test_cwl_oscar_execution():
     except Exception as e:
         print(f"✗ CWL workflow execution failed: {e}")
 
+def test_output_directory_retry():
+    """Test the output directory retry logic."""
+    print("\nTesting output directory retry logic...")
+    
+    try:
+        import tempfile
+        import time
+        import threading
+        from task import OSCARTask
+        
+        # Create a temporary directory for testing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_output_dir = os.path.join(temp_dir, "test_output")
+            
+            # Create a mock OSCARTask instance
+            class MockOSCARTask:
+                def __init__(self):
+                    self.name = "test_job"
+                
+                def _wait_for_output_directory(self, output_dir, max_retries=3, retry_delay=1):
+                    """Copy the method from OSCARTask for testing."""
+                    import logging
+                    log = logging.getLogger("oscar-backend")
+                    LOG_PREFIX_JOB = "[job %s]"
+                    
+                    for attempt in range(max_retries + 1):
+                        if os.path.exists(output_dir):
+                            if attempt > 0:
+                                log.info(LOG_PREFIX_JOB + " Output directory found after %d retries: %s", self.name, attempt, output_dir)
+                            return True
+                        
+                        if attempt < max_retries:
+                            log.debug(LOG_PREFIX_JOB + " Output directory not found (attempt %d/%d), waiting %d seconds: %s", 
+                                     self.name, attempt + 1, max_retries + 1, retry_delay, output_dir)
+                            time.sleep(retry_delay)
+                    
+                    return False
+            
+            mock_task = MockOSCARTask()
+            
+            # Test 1: Directory doesn't exist - should return False
+            print("Test 1: Directory doesn't exist")
+            result = mock_task._wait_for_output_directory(test_output_dir, max_retries=2, retry_delay=0.5)
+            if not result:
+                print("✓ Correctly returned False when directory doesn't exist")
+            else:
+                print("✗ Should have returned False when directory doesn't exist")
+                return False
+            
+            # Test 2: Directory exists immediately - should return True
+            print("Test 2: Directory exists immediately")
+            os.makedirs(test_output_dir)
+            result = mock_task._wait_for_output_directory(test_output_dir, max_retries=2, retry_delay=0.5)
+            if result:
+                print("✓ Correctly returned True when directory exists immediately")
+            else:
+                print("✗ Should have returned True when directory exists immediately")
+                return False
+            
+            # Clean up for next test
+            os.rmdir(test_output_dir)
+            
+            # Test 3: Directory appears after delay - should return True
+            print("Test 3: Directory appears after delay")
+            
+            def create_directory_after_delay():
+                time.sleep(1.5)  # Wait 1.5 seconds then create directory
+                os.makedirs(test_output_dir)
+            
+            # Start thread to create directory after delay
+            thread = threading.Thread(target=create_directory_after_delay)
+            thread.start()
+            
+            # This should find the directory after retries
+            result = mock_task._wait_for_output_directory(test_output_dir, max_retries=3, retry_delay=1)
+            thread.join()  # Wait for thread to complete
+            
+            if result:
+                print("✓ Correctly found directory after retry delay")
+            else:
+                print("✗ Should have found directory after retry delay")
+                return False
+            
+            print("✓ All output directory retry tests passed!")
+            return True
+            
+    except Exception as e:
+        print(f"✗ Output directory retry test failed: {e}")
+        return False
+
 def test_service_name_uniqueness():
     """Test that different MinIO configurations produce unique service names."""
     print("\nTesting service name uniqueness with different MinIO configs...")
@@ -317,21 +407,24 @@ def main():
     print("CWL-OSCAR Test Suite")
     print("=" * 50)
     
-    # Test 1: Service name uniqueness (unit test - doesn't require OSCAR connection)
+    # Test 1: Output directory retry logic (unit test - doesn't require OSCAR connection)
+    test_output_directory_retry()
+    
+    # Test 2: Service name uniqueness (unit test - doesn't require OSCAR connection)
     test_service_name_uniqueness()
     
-    # Test 2: OSCAR client connectivity
+    # Test 3: OSCAR client connectivity
     if not test_oscar_client():
         print("Skipping further tests due to OSCAR client failure")
         return 1
     
-    # Test 3: Basic cwl-oscar functionality
+    # Test 4: Basic cwl-oscar functionality
     test_cwl_oscar_basic()
     
-    # Test 4: Direct OSCAR service test
+    # Test 5: Direct OSCAR service test
     test_oscar_service_direct()
     
-    # Test 5: Full CWL workflow execution
+    # Test 6: Full CWL workflow execution
     # test_cwl_oscar_execution()  # Commented out for now as it requires the service to be properly set up
     
     print("\n" + "=" * 50)

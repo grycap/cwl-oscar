@@ -271,6 +271,21 @@ def main(args=None):
         shared_minio_config=shared_minio_config
     )
     
+    # * Disable ANSI color codes in cwltool logging to fix log output
+    os.environ['NO_COLOR'] = '1'  # Standard environment variable to disable colors
+    os.environ['FORCE_COLOR'] = '0'  # Disable forced colors
+    
+    # Configure cwltool to not use colors by setting up a plain formatter
+    try:
+        import cwltool.loghandler
+        # Create a plain formatter without colors
+        plain_formatter = logging.Formatter('%(levelname)s %(message)s')
+        if hasattr(cwltool.loghandler, 'defaultStreamHandler'):
+            cwltool.loghandler.defaultStreamHandler.setFormatter(plain_formatter)
+    except (ImportError, AttributeError):
+        # If cwltool structure is different, the environment variables should still work
+        pass
+    
     return cwltool.main.main(
         args=parsed_args,
         executor=executor,
