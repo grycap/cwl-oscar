@@ -1,0 +1,23 @@
+# OSCAR Test Input - Two Samples
+# For testing malaria-scatter-workflow.cwl with cwl-oscar
+# Uses OSCAR service mount path: /mnt/shared-epitest/mount/zenodo_10086238/
+
+samples:
+  - fastq_file:
+      class: File
+      path: /mnt/shared-epitest/mount/zenodo_10086238/rawData/3D7_DR_Rep1_DR_dhfr_t25_F.fastq.gz
+    marker_id: DR_dhfr_t25
+  - fastq_file:
+      class: File
+      path: /mnt/shared-epitest/mount/zenodo_10086238/rawData/3D7_DR_Rep1_DR_k13_520-580_F.fastq.gz
+    marker_id: DR_k13_520-580
+
+snp_positions:
+  class: File
+  path: /mnt/shared-epitest/mount/zenodo_10086238/data/drug_resistance_SNP_positions.csv
+
+# Parameters optimized for testing
+min_length: 10
+max_length: 2100
+min_quality: 8
+min_coverage: 65
