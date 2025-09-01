@@ -8,7 +8,7 @@ functions:
       script: script.sh
       environment:
         variables:
-          MOUNT_PATH: "/mnt/cwl-oscar/mount"
+          MOUNT_PATH: "/mnt/shared-epitest/mount"
       input:
       - storage_provider: minio.default
         path: cwl-oscar/in
@@ -17,4 +17,4 @@ functions:
         path: cwl-oscar/out
       mount:
         storage_provider: minio.default
-        path: cwl-oscar/mount
+        path: /shared-epitest/mount
