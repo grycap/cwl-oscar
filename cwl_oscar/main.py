@@ -88,7 +88,7 @@ def main(args=None):
             if arg == '--cluster-endpoint':
                 if current_cluster:
                     clusters.append(current_cluster)
-                current_cluster = {'endpoint': raw_args[i + 1], 'token': None, 'username': None, 'password': None, 'ssl': True}
+                current_cluster = {'endpoint': raw_args[i + 1], 'token': None, 'username': None, 'password': None, 'ssl': True, 'steps': []}
                 i += 2
             elif arg == '--cluster-token':
                 if current_cluster:
@@ -126,6 +126,18 @@ def main(args=None):
                     parser.print_usage(sys.stderr)
                     print("cwl-oscar: error: --cluster-disable-ssl must follow --cluster-endpoint", file=sys.stderr)
                     return 1
+            elif arg == '--cluster-steps':
+                if current_cluster:
+                    # Parse comma-separated steps and add to the cluster
+                    steps_str = raw_args[i + 1]
+                    steps = [step.strip() for step in steps_str.split(',') if step.strip()]
+                    current_cluster['steps'].extend(steps)
+                    i += 2
+                else:
+                    print(versionstring(), file=sys.stderr)
+                    parser.print_usage(sys.stderr)
+                    print("cwl-oscar: error: --cluster-steps must follow --cluster-endpoint", file=sys.stderr)
+                    return 1
             elif arg.startswith('--shared-minio') or arg.startswith('--mount-path') or arg.startswith('--outdir') or arg.startswith('--') or not arg.startswith('-'):
                 # Skip non-cluster arguments
                 i += 1
@@ -145,6 +157,7 @@ def main(args=None):
             username = cluster['username']
             password = cluster['password']
             ssl = cluster['ssl']
+            steps = cluster['steps']
             
             # Validate authentication for this cluster
             if not token and not username:
@@ -159,10 +172,11 @@ def main(args=None):
                 print(f"cwl-oscar: error: cluster {i+1} needs --cluster-password when using --cluster-username", file=sys.stderr)
                 return 1
             
-            # Add cluster to manager
-            cluster_manager.add_cluster_from_args(endpoint, token, username, password, ssl)
+            # Add cluster to manager with steps
+            cluster_manager.add_cluster_from_args(endpoint, token, username, password, ssl, steps)
             auth_method = "token" if token else "username/password"
-            log.info("Added cluster %d: %s (%s)", i+1, endpoint, auth_method)
+            steps_info = f" (steps: {', '.join(steps)})" if steps else ""
+            log.info("Added cluster %d: %s (%s)%s", i+1, endpoint, auth_method, steps_info)
     
     else:
         print(versionstring(), file=sys.stderr)
@@ -296,6 +310,8 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
                         help="OSCAR password for basic authentication for corresponding cluster (can be specified multiple times)")
     parser.add_argument("--cluster-disable-ssl", action='append', const=True, nargs='?',
                         help="Disable SSL verification for corresponding cluster (can be specified multiple times)")
+    parser.add_argument("--cluster-steps", type=str, action='append',
+                        help="Comma-separated list of workflow steps to execute on corresponding cluster (can be specified multiple times)")
     
     # Shared MinIO bucket configuration for multi-cluster support
     parser.add_argument("--shared-minio-endpoint", type=str,

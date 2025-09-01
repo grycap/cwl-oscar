@@ -17,6 +17,7 @@ class ClusterConfig:
     password: Optional[str] = None
     ssl: bool = True
     name: Optional[str] = None
+    steps: Optional[List[str]] = None
     
     def __post_init__(self):
         """Validate cluster configuration."""
@@ -32,6 +33,10 @@ class ClusterConfig:
         # Generate a name if not provided
         if not self.name:
             self.name = f"cluster-{self.endpoint.split('://')[-1].split('/')[0]}"
+            
+        # Initialize steps as empty list if None
+        if self.steps is None:
+            self.steps = []
 
 
 class ClusterManager:
@@ -50,14 +55,15 @@ class ClusterManager:
         
     def add_cluster_from_args(self, endpoint: str, token: Optional[str] = None,
                              username: Optional[str] = None, password: Optional[str] = None,
-                             ssl: bool = True) -> None:
+                             ssl: bool = True, steps: Optional[List[str]] = None) -> None:
         """Add a cluster from individual arguments."""
         config = ClusterConfig(
             endpoint=endpoint,
             token=token,
             username=username,
             password=password,
-            ssl=ssl
+            ssl=ssl,
+            steps=steps
         )
         self.add_cluster(config)
         
@@ -78,6 +84,21 @@ class ClusterManager:
             if cluster.name == name:
                 return cluster
         return None
+        
+    def get_cluster_for_step(self, step_name: str) -> Optional[ClusterConfig]:
+        """Get the cluster assigned to a specific workflow step, or use round-robin if not mapped."""
+        if not self.clusters:
+            return None
+            
+        # First, check if any cluster has this step explicitly mapped
+        for cluster in self.clusters:
+            if cluster.steps and step_name in cluster.steps:
+                log.info("Step '%s' mapped to cluster '%s'", step_name, cluster.name)
+                return cluster
+        
+        # If no explicit mapping found, use round-robin scheduling
+        log.debug("Step '%s' not explicitly mapped, using round-robin selection", step_name)
+        return self.get_next_cluster()
         
     def get_cluster_count(self) -> int:
         """Get the total number of clusters."""
@@ -116,7 +137,8 @@ class ClusterManager:
                 'name': cluster.name,
                 'endpoint': cluster.endpoint,
                 'auth_type': 'token' if cluster.token else 'username/password',
-                'ssl': cluster.ssl
+                'ssl': cluster.ssl,
+                'steps': cluster.steps if cluster.steps else []
             }
             info.append(cluster_info)
         return info

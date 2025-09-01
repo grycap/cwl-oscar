@@ -1,3 +1,5 @@
+cwltest/
+
 # Python
 __pycache__/
 *.py[cod]

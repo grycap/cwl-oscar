@@ -54,8 +54,8 @@ class OSCARTask(JobBase):
             # Set working directory - the command script will create its own run-specific directory
             workdir = self.mount_path
             
-            # Get the next available cluster using round-robin scheduling
-            cluster_config = self.cluster_manager.get_next_cluster()
+            # Get cluster for this specific step (uses step mapping if available, otherwise round-robin)
+            cluster_config = self.cluster_manager.get_cluster_for_step(self.name)
             if not cluster_config:
                 raise RuntimeError("No available clusters for task execution")
             
