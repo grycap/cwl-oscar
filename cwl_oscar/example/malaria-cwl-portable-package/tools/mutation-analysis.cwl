@@ -8,7 +8,7 @@ doc: "Analyze haplotypes for known drug resistance mutations"
 
 requirements:
   DockerRequirement:
-    dockerPull: "python:3.11-slim"
+    dockerPull: "python:3.13-slim"
   InitialWorkDirRequirement:
     listing:
       - entryname: analyze_mutations.py

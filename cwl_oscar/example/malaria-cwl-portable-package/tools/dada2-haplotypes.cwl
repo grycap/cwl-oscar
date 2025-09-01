@@ -8,7 +8,7 @@ doc: "DADA2-based haplotype reconstruction for malaria amplicon data"
 
 requirements:
   DockerRequirement:
-    dockerPull: "blekhmanlab/dada2:latest"
+    dockerPull: "robertbio/dada2:1.30.0"
   InitialWorkDirRequirement:
     listing:
       - entryname: dada2_haplotypes.R

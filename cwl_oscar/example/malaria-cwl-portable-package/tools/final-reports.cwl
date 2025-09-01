@@ -8,7 +8,7 @@ doc: "Aggregate per-sample outputs into final CSVs/FASTAs matching the paper; ac
 
 requirements:
   DockerRequirement:
-    dockerPull: python:3.11-slim
+    dockerPull: python:3.13-slim
   InitialWorkDirRequirement:
     listing:
       - entryname: generate_final_reports.py

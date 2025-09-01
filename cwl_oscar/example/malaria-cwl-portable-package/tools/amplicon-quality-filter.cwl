@@ -8,7 +8,7 @@ doc: "Quality filtering for malaria amplicon data"
 
 requirements:
   DockerRequirement:
-    dockerPull: "quay.io/biocontainers/seqtk:1.4--he4a0461_2"
+    dockerPull: "robertbio/seqtk:1.4"
   InlineJavascriptRequirement: {}
 
 baseCommand: [bash, -c]
