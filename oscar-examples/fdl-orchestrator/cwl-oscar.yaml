@@ -1,0 +1,20 @@
+functions:
+  oscar:
+  - oscar:
+      name: cwl-oscar
+      memory: 1Gi
+      cpu: '1.0'
+      image: robertbio/cwl-oscar:latest
+      script: script.sh
+      environment:
+        variables:
+          MOUNT_PATH: "/mnt/cwl-oscar/mount"
+      input:
+      - storage_provider: minio.default
+        path: cwl-oscar/in
+      output:
+      - storage_provider: minio.default
+        path: cwl-oscar/out
+      mount:
+        storage_provider: minio.default
+        path: cwl-oscar/mount
