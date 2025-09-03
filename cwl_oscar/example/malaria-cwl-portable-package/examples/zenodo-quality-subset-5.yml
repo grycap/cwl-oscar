@@ -1,0 +1,24 @@
+# High-quality subset - 2 samples (>500 reads each)
+samples:
+  - fastq_file:
+      class: File
+      path: /mnt/shared-epitest/mount/zenodo_10086238/rawData/Pilot_study_19_DBS_MH_MH_cpmp_22_F.fastq.gz
+    marker_id: MH_cpmp_22
+  - fastq_file:
+      class: File
+      path: /mnt/shared-epitest/mount/zenodo_10086238/rawData/Pilot_study_18_DBS_MH_MH_cpmp_22_F.fastq.gz
+    marker_id: MH_cpmp_22
+
+
+snp_positions:
+  class: File
+  path: /mnt/shared-epitest/mount/zenodo_10086238/data/drug_resistance_SNP_positions.csv
+
+input_yml_file:
+  class: File
+  path: /mnt/shared-epitest/mount/zenodo-quality-subset-5.yml
+
+min_length: 10
+max_length: 2100
+min_quality: 8
+min_coverage: 50
