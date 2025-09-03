@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Dict, Any, Optional
 
@@ -146,10 +147,12 @@ class OSCARServiceManager:
         """Generate a unique service name based on tool and requirements."""
         log.debug("%s: Generating service name for tool", LOG_PREFIX_SERVICE_MANAGER)
         
-        # Use job_name if provided, otherwise use "tool"
+        # Extract base step name by removing CWL scatter suffixes (_2, _3, etc.)
         if job_name:
-            tool_id = job_name
-            log.debug("%s: Using provided job_name as tool ID: '%s'", LOG_PREFIX_SERVICE_MANAGER, tool_id)
+            # Remove CWL scatter suffixes like _2, _3, etc. to enable service reuse
+            base_step_name = re.sub(r'_\d+$', '', job_name)
+            tool_id = base_step_name
+            log.debug("%s: Using base step name as tool ID: '%s' (from job_name: '%s')", LOG_PREFIX_SERVICE_MANAGER, tool_id, job_name)
         else:
             tool_id = "tool"
             log.debug("%s: No job_name provided, using default tool ID: '%s'", LOG_PREFIX_SERVICE_MANAGER, tool_id)

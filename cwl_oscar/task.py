@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import time
 from typing import Dict, Any, Optional
 
@@ -66,9 +67,10 @@ class OSCARTask(JobBase):
         try:
             log.info(LOG_PREFIX_JOB + " Starting OSCAR execution", self.name)
             
-            # Generate job ID for this run
-            job_id = f"{self.name}_{int(time.time())}"
-            log.debug(LOG_PREFIX_JOB + " Generated job_id: %s", self.name, job_id)
+            # Generate job ID for this run using base step name (strip scatter suffixes)
+            base_step_name = re.sub(r'_\d+$', '', self.name)
+            job_id = f"{base_step_name}_{int(time.time())}"
+            log.debug(LOG_PREFIX_JOB + " Generated job_id: %s (from step: %s)", self.name, job_id, self.name)
             
             # Build the command line
             cmd = self.build_command_line()
@@ -80,7 +82,7 @@ class OSCARTask(JobBase):
             workdir = self.mount_path
             
             # Get cluster for this specific step (uses step mapping if available, otherwise round-robin)
-            cluster_config = self.cluster_manager.get_cluster_for_step(self.name)
+            cluster_config = self.cluster_manager.get_cluster_for_step(base_step_name)
             if not cluster_config:
                 raise RuntimeError("No available clusters for task execution")
             
