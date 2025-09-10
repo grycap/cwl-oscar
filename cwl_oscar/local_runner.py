@@ -33,14 +33,10 @@ Usage:
 
 import os
 import json
-
-import yaml
 import time
 import tempfile
 import shutil
 import logging
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
 
 try:
     from oscar_python.client import Client
