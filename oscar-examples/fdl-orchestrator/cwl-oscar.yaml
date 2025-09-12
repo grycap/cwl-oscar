@@ -2,8 +2,8 @@ functions:
   oscar:
   - oscar:
       name: cwl-oscar
-      memory: 1Gi
-      cpu: '1.0'
+      memory: 500Mi
+      cpu: '0.5'
       image: robertbio/cwl-oscar:latest
       script: script.sh
       environment:
