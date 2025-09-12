@@ -506,6 +506,162 @@ class OSCARLocalRunner:
             
         return output_dir
         
+    def create_cwl_oscar_service(self, service_name="cwl-oscar"):
+        """
+        Create a cwl-oscar service on the OSCAR cluster.
+        
+        Args:
+            service_name: Name of the service to create
+            
+        Returns:
+            True if service was created successfully, False otherwise
+        """
+        log.info("Creating cwl-oscar service: %s", service_name)
+        
+        try:
+            client = self.get_client()
+            
+            # Check if service already exists
+            services_response = client.list_services()
+            if services_response.status_code == 200:
+                existing_services = json.loads(services_response.text)
+                for service in existing_services:
+                    if service.get('name') == service_name:
+                        log.info("Service '%s' already exists on cluster", service_name)
+                        return True
+            
+            # Create service definition based on cwl-oscar.yaml template
+            service_def = self._create_cwl_oscar_service_definition(service_name)
+            
+            # Create the service
+            log.info("Creating service '%s' on OSCAR cluster", service_name)
+            response = client.create_service(service_def)
+            
+            if response.status_code in [200, 201]:
+                log.info("✅ Service '%s' created successfully", service_name)
+                return True
+            else:
+                log.error("❌ Failed to create service '%s': HTTP %d - %s", 
+                         service_name, response.status_code, response.text)
+                return False
+                
+        except Exception as e:
+            log.error("❌ Error creating service '%s': %s", service_name, e)
+            return False
+    
+    def _create_cwl_oscar_service_definition(self, service_name):
+        """
+        Create service definition for cwl-oscar service based on the FDL template.
+        
+        Args:
+            service_name: Name of the service
+            
+        Returns:
+            Service definition dictionary
+        """
+        # * Script template based on fdl-orchestrator/script.sh
+        script_template = '''#!/bin/bash
+
+# Debug: Show environment variables
+echo "=== Environment Variables ==="
+echo "INPUT_FILE_PATH: $INPUT_FILE_PATH"
+echo "TMP_OUTPUT_DIR: $TMP_OUTPUT_DIR"
+echo "MOUNT_PATH: $MOUNT_PATH"
+echo "=============================="
+
+# Sleep for 5 seconds
+sleep 5
+
+FILE_NAME=$(basename "$INPUT_FILE_PATH")
+
+# Check if required environment variables are set
+if [ -z "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: INPUT_FILE_PATH environment variable not set"
+    exit 1
+fi
+
+if [ -z "$MOUNT_PATH" ]; then
+    echo "ERROR: MOUNT_PATH environment variable not set"
+    exit 1
+fi
+
+# Check if the mount path is available
+echo "[script.sh] Checking if the mount path is available"
+ls -lah /mnt
+
+# Check if the input command script exists
+if [ ! -f "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: Command script not found at $INPUT_FILE_PATH"
+    exit 1
+fi
+
+echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
+
+# Execute the command script with bash
+# The command script will handle its own working directory and environment setup
+# Redirect stdout to out.log and stderr to err.log
+bash "$INPUT_FILE_PATH" 1> "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" # 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
+exit_code=$?
+
+echo "SCRIPT: Command completed with exit code: $exit_code"
+
+# Create output file in TMP_OUTPUT_DIR for OSCAR to detect completion
+if [ -n "$TMP_OUTPUT_DIR" ]; then
+    OUTPUT_FILE="$TMP_OUTPUT_DIR/$FILE_NAME.exit_code"
+    echo "$exit_code" > "$OUTPUT_FILE"
+    echo "SCRIPT: Exit code written to: $OUTPUT_FILE"
+fi
+
+echo "Script completed."
+exit $exit_code
+'''
+        
+        # * Service definition based on cwl-oscar.yaml template
+        service_def = {
+            'name': service_name,
+            'memory': '500Mi',
+            'cpu': '0.5',
+            'image': 'robertbio/cwl-oscar:latest',
+            'script': script_template,
+            'environment': {
+                'variables': {
+                    'MOUNT_PATH': self.mount_path
+                }
+            },
+            'input': [{
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/in'
+            }],
+            'output': [{
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/out'
+            }],
+            'mount': {
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/mount'
+            }
+        }
+        
+        # Add shared MinIO configuration if available
+        if self.shared_minio_config:
+            service_def["storage_providers"] = {
+                "minio": {
+                    "shared": {
+                        "endpoint": self.shared_minio_config["endpoint"],
+                        "verify": self.shared_minio_config.get("verify_ssl", True),
+                        "access_key": self.shared_minio_config["access_key"],
+                        "secret_key": self.shared_minio_config["secret_key"],
+                        "region": self.shared_minio_config.get("region", "us-east-1")
+                    }
+                }
+            }
+            
+            # Update mount to use shared MinIO
+            service_def["mount"]["storage_provider"] = "minio.shared"
+        
+        log.debug("Created service definition: %s", json.dumps(service_def, indent=2))
+        return service_def
+        
     def run_workflow(self, workflow_path, input_path, additional_files=None, 
                     additional_args=None, output_dir="./results", timeout_seconds=600):
         """
@@ -571,9 +727,13 @@ def main():
     
     parser = argparse.ArgumentParser(description='Run local CWL workflows on OSCAR')
     
-    # Positional arguments
-    parser.add_argument('workflow', help='Path to CWL workflow file')
-    parser.add_argument('input', help='Path to input YAML/JSON file')
+    # Positional arguments (optional when using --init)
+    parser.add_argument('workflow', nargs='?', help='Path to CWL workflow file')
+    parser.add_argument('input', nargs='?', help='Path to input YAML/JSON file')
+    
+    # Service initialization
+    parser.add_argument('--init', '--create', action='store_true', 
+                        help='Initialize/create cwl-oscar service on OSCAR cluster')
     
     # Multi-cluster support
     parser.add_argument("--cluster-endpoint", type=str, action='append',
@@ -603,7 +763,7 @@ def main():
     
     # Execution configuration
     parser.add_argument('--mount-path', default='/mnt/cwl-oscar/mount', help='Mount path for shared data')
-    parser.add_argument('--service-name', default='cwl-oscar', help='CWL-OSCAR service name')
+    parser.add_argument('--service-name', default='cwl-oscar', help='CWL-OSCAR service name (used for both execution and initialization)')
     parser.add_argument('--output-dir', default='./results', help='Output directory')
     parser.add_argument('--timeout', type=int, default=600, help='Timeout in seconds')
     parser.add_argument('--additional-files', nargs='*', help='Additional files to upload')
@@ -701,6 +861,17 @@ def main():
         print("Error: --cluster-endpoint is required (at least one cluster must be specified)")
         return 1
     
+    # Validate arguments based on mode
+    if args.init:
+        # Initialization mode - workflow and input are optional
+        log.info("Running in initialization mode")
+    else:
+        # Normal execution mode - workflow and input are required
+        if not args.workflow or not args.input:
+            print("Error: workflow and input arguments are required for normal execution")
+            print("Use --init to create a service without running a workflow")
+            return 1
+    
     # Set up logging
     if args.quiet:
         level = logging.WARNING
@@ -734,6 +905,20 @@ def main():
         cwl_oscar_service=args.service_name,
         shared_minio_config=shared_minio_config
     )
+    
+    # Handle initialization mode
+    if args.init:
+        print(f"🚀 Initializing cwl-oscar service: {args.service_name}")
+        success = runner.create_cwl_oscar_service(args.service_name)
+        
+        if success:
+            print(f"✅ Service '{args.service_name}' initialized successfully")
+            print(f"🔗 Cluster: {runner.oscar_endpoint}")
+            print(f"📁 Mount path: {args.mount_path}")
+            return 0
+        else:
+            print(f"❌ Failed to initialize service '{args.service_name}'")
+            return 1
     
     # Run workflow
     success, results_dir = runner.run_workflow(
