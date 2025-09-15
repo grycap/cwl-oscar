@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-# Copyright 2025 Universitat Politècnica de València and contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 """
 Local CWL-OSCAR Runner
@@ -48,12 +35,12 @@ log = logging.getLogger("cwl-oscar-local")
 
 class OSCARLocalRunner:
     """Local runner for CWL workflows on OSCAR infrastructure."""
-    
+
     def __init__(self, clusters, mount_path="/mnt/cwl-oscar/mount", cwl_oscar_service="cwl-oscar", 
                  shared_minio_config=None):
         """
         Initialize the local runner.
-        
+
         Args:
             clusters: List of cluster configurations for multi-cluster support
             mount_path: Mount path for shared data
@@ -62,20 +49,19 @@ class OSCARLocalRunner:
         """
         self.clusters = clusters
         self.primary_cluster = clusters[0]  # Use first cluster for service operations
-            
         self.mount_path = mount_path
         self.cwl_oscar_service = cwl_oscar_service
         self.shared_minio_config = shared_minio_config
         self.client = None
         self.storage_service = None
-        
+
         # Expose primary cluster properties for compatibility
         self.oscar_endpoint = self.primary_cluster['endpoint']
         self.oscar_token = self.primary_cluster.get('token')
         self.oscar_username = self.primary_cluster.get('username')
         self.oscar_password = self.primary_cluster.get('password')
         self.ssl = self.primary_cluster.get('ssl', True)
-        
+
     def get_client(self):
         """Get or create OSCAR client."""
         if self.client is None:
@@ -96,83 +82,82 @@ class OSCARLocalRunner:
                     'password': self.oscar_password,
                     'ssl': str(self.ssl)
                 }
-            
             self.client = Client(options=options)
         return self.client
-        
+
     def get_storage_service(self):
         """Get or create storage service."""
         if self.storage_service is None:
             self.storage_service = self.get_client().create_storage_client()
         return self.storage_service
-        
+
     def get_service_config(self, service_name):
         """Get configuration for a specific service."""
         client = self.get_client()
         services_response = client.list_services()
-        
+
         if services_response.status_code != 200:
             raise Exception(f"Failed to list services: {services_response.text}")
-            
+
         services = json.loads(services_response.text)
         for service in services:
             if service.get('name') == service_name:
                 return service
-                
+
         raise Exception(f"Service {service_name} not found")
-        
+
     def upload_file_to_mount(self, local_path, remote_filename=None):
         """
         Upload a local file to the OSCAR mount storage.
-        
+
         Args:
             local_path: Path to local file
             remote_filename: Optional remote filename (default: use local filename)
-            
+
         Returns:
             Remote path in mount storage
         """
         if not os.path.exists(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
-            
+
         if remote_filename is None:
             remote_filename = os.path.basename(local_path)
-            
+
         # Remove leading slash and 'mnt' from mount_path to get storage path
         mount_parts = self.mount_path.strip('/').split('/')
         if mount_parts[0] == 'mnt':
             mount_parts = mount_parts[1:]
         storage_path = '/'.join(mount_parts)
-        
+
         log.info("Uploading %s to %s/%s", local_path, storage_path, remote_filename)
-        
+
         storage_service = self.get_storage_service()
         # upload_file expects: provider, local_file_path, remote_directory_path
         # It automatically uses the original filename
         storage_service.upload_file("minio.default", local_path, storage_path)
-        
+
         return f"{self.mount_path}/{remote_filename}"
-        
+
     def upload_workflow_files(self, workflow_path, input_path, additional_files=None):
         """
         Upload workflow, input file, and any additional files to mount storage.
-        
+
         Args:
             workflow_path: Path to CWL workflow file
             input_path: Path to input YAML/JSON file  
             additional_files: Optional list of additional files to upload
-            
+
         Returns:
             Dict with remote paths for uploaded files
         """
         uploaded_files = {}
-        
+
         # Upload workflow file
         uploaded_files['workflow'] = self.upload_file_to_mount(workflow_path)
-        
+
         # Upload input file
         uploaded_files['input'] = self.upload_file_to_mount(input_path)
-        
+
         # Upload additional files if provided
         if additional_files:
             uploaded_files['additional'] = []
