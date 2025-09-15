@@ -19,3 +19,7 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["cwl_oscar"]
+
+[project.scripts]
+cwl-oscar = "cwl_oscar.main:main"
+cwl-oscar-cli = "cwl_oscar.local_runner:main"
