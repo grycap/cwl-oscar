@@ -16,3 +16,6 @@ dependencies = [
     "requests>=2.18.2",
     "typing-extensions>=3.7.4",
 ]
+
+[tool.setuptools]
+packages = ["cwl_oscar"]
