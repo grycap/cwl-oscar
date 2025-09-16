@@ -7,7 +7,7 @@
 DEFAULT_MEMORY = '1Gi'
 DEFAULT_CPU = '1.0'
 DEFAULT_DOCKER_IMAGE = 'opensourcefoundries/minideb:jessie'
-DEFAULT_MOUNT_PATH = '/mnt/cwl2o-data/mount'
+DEFAULT_MOUNT_PATH = '/mnt/cwl-oscar/mount'
 DEFAULT_CLUSTER_ID = 'oscar-cluster'
 
 # Retry configuration

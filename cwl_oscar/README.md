@@ -70,7 +70,7 @@ chmod +x cwl-oscar
 
 ### Optional Parameters
 
-- `--mount-path`: Mount path for shared data (default: `/mnt/cwl2o-data/mount`)
+- `--mount-path`: Mount path for shared data (default: `/mnt/cwl-oscar/mount`)
 - `--service-name`: OSCAR service name to use (default: `run-script-event2`)
 - `--cluster-disable-ssl`: Disable SSL verification for corresponding cluster
 - `--shared-minio-endpoint`: Shared MinIO endpoint for multi-cluster support
@@ -318,10 +318,10 @@ functions:
       script: script.sh
       environment:
         variables:
-          MOUNT_PATH: "/mnt/cwl2o-data/mount"
+          MOUNT_PATH: "/mnt/cwl-oscar/mount"
       mount:
         storage_provider: minio.default
-        path: /cwl2o-data/mount
+        path: /cwl-oscar/mount
 ```
 
 ## Environment Variables
