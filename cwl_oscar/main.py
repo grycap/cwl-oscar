@@ -29,7 +29,7 @@ console = logging.StreamHandler(sys.stderr)
 log.addHandler(console)
 
 DEFAULT_TMP_PREFIX = "tmp"
-DEFAULT_MOUNT_PATH = "/mnt/cwl2o-data/mount"
+DEFAULT_MOUNT_PATH = "/mnt/cwl-oscar/mount"
 
 
 def versionstring():
