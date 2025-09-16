@@ -28,3 +28,4 @@ fdl-run-command/command.error
 
 # Build artifacts
 cwl_oscar/.build_info
+cwl_oscar/_version.py

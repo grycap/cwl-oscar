@@ -15,7 +15,19 @@
 
 """CWL OSCAR Executor - Execute CWL workflows on OSCAR clusters."""
 
-__version__ = "0.1.0"
+import os
+from importlib.metadata import version, PackageNotFoundError
+
+# * Try to get version from setuptools-scm generated file
+try:
+    from ._version import version as __version__
+except ImportError:
+    # ! Fallback: try to get version from package metadata
+    try:
+        __version__ = version("cwl-oscar")
+    except PackageNotFoundError:
+        # ! Final fallback for development
+        __version__ = "0.1.0-dev"
 
 # Build information - can be updated by build scripts
 __build_time__ = "unknown"
@@ -23,7 +35,6 @@ __git_revision__ = "unknown"
 
 def get_version_info():
     """Get version information."""
-    import os
     import datetime
     
     # Try to read build info from file (created by build process)

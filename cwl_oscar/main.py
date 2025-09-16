@@ -10,8 +10,8 @@ import logging
 from typing import MutableMapping, MutableSequence
 from typing_extensions import Text
 
-import pkg_resources
 from typing import Any, Dict, Tuple, Optional
+from importlib.metadata import version, PackageNotFoundError
 import cwltool.main
 from cwltool.context import LoadingContext, RuntimeContext
 from cwltool.executors import (MultithreadedJobExecutor, SingleJobExecutor,
@@ -34,10 +34,9 @@ DEFAULT_MOUNT_PATH = "/mnt/cwl2o-data/mount"
 
 def versionstring():
     """Determine our version."""
-    pkg = pkg_resources.require("cwltool")
-    if pkg:
-        cwltool_ver = pkg[0].version
-    else:
+    try:
+        cwltool_ver = version("cwltool")
+    except PackageNotFoundError:
         cwltool_ver = "unknown"
     
     version_info = get_version_info()
