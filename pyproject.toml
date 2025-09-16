@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=80", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "cwl-oscar"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A lightweight Workflow Management System to Orchestrate CWL Workflows on OSCAR clusters"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,7 +22,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["cwl_oscar"]
+packages = ["cwl_oscar", "cwl_oscar.scripts"]
+
+[tool.setuptools_scm]
+version_file = "cwl_oscar/_version.py"
 
 [project.scripts]
 cwl-oscar = "cwl_oscar.main:main"
