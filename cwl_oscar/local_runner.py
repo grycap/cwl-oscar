@@ -178,11 +178,8 @@ class OSCARLocalRunner:
             Converted endpoint for use inside OSCAR cluster
         """
         if 'localhost' in endpoint or '127.0.0.1' in endpoint:
-            # * Convert localhost to internal Kubernetes service endpoint
-            if endpoint.startswith('https://'):
-                return 'https://oscar.oscar.svc.cluster.local:8080'
-            else:
-                return 'http://oscar.oscar.svc.cluster.local:8080'
+            # * Convert localhost to internal Kubernetes service endpoint (always HTTP)
+            return 'http://oscar.oscar.svc.cluster.local:8080'
         return endpoint
 
     def create_run_script(self, workflow_remote_path, input_remote_path, additional_args=None):

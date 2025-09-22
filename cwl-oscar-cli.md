@@ -43,7 +43,7 @@ You should see your service (default: `cwl-oscar`) in the oscar services page.
 
 **Local OSCAR cluster behavior:**
 - When no `--cluster-endpoint` is specified, defaults to `http://localhost`
-- Automatically converts localhost endpoints to `oscar.oscar.svc.cluster.local:8080` in generated scripts
+- Automatically converts localhost endpoints to `http://oscar.oscar.svc.cluster.local:8080` in generated scripts (always HTTP)
 - This allows the cwl-oscar service running inside Kubernetes to connect to the OSCAR API
 - Authentication parameters (`--cluster-token` or `--cluster-username`/`--cluster-password`) are still required
 
