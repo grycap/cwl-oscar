@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-# Copyright 2025 Universitat Politècnica de València and contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 """
 Local CWL-OSCAR Runner
@@ -48,12 +35,12 @@ log = logging.getLogger("cwl-oscar-local")
 
 class OSCARLocalRunner:
     """Local runner for CWL workflows on OSCAR infrastructure."""
-    
+
     def __init__(self, clusters, mount_path="/mnt/cwl-oscar/mount", cwl_oscar_service="cwl-oscar", 
                  shared_minio_config=None):
         """
         Initialize the local runner.
-        
+
         Args:
             clusters: List of cluster configurations for multi-cluster support
             mount_path: Mount path for shared data
@@ -62,20 +49,19 @@ class OSCARLocalRunner:
         """
         self.clusters = clusters
         self.primary_cluster = clusters[0]  # Use first cluster for service operations
-            
         self.mount_path = mount_path
         self.cwl_oscar_service = cwl_oscar_service
         self.shared_minio_config = shared_minio_config
         self.client = None
         self.storage_service = None
-        
+
         # Expose primary cluster properties for compatibility
         self.oscar_endpoint = self.primary_cluster['endpoint']
         self.oscar_token = self.primary_cluster.get('token')
         self.oscar_username = self.primary_cluster.get('username')
         self.oscar_password = self.primary_cluster.get('password')
         self.ssl = self.primary_cluster.get('ssl', True)
-        
+
     def get_client(self):
         """Get or create OSCAR client."""
         if self.client is None:
@@ -96,83 +82,82 @@ class OSCARLocalRunner:
                     'password': self.oscar_password,
                     'ssl': str(self.ssl)
                 }
-            
             self.client = Client(options=options)
         return self.client
-        
+
     def get_storage_service(self):
         """Get or create storage service."""
         if self.storage_service is None:
             self.storage_service = self.get_client().create_storage_client()
         return self.storage_service
-        
+
     def get_service_config(self, service_name):
         """Get configuration for a specific service."""
         client = self.get_client()
         services_response = client.list_services()
-        
+
         if services_response.status_code != 200:
             raise Exception(f"Failed to list services: {services_response.text}")
-            
+
         services = json.loads(services_response.text)
         for service in services:
             if service.get('name') == service_name:
                 return service
-                
+
         raise Exception(f"Service {service_name} not found")
-        
+
     def upload_file_to_mount(self, local_path, remote_filename=None):
         """
         Upload a local file to the OSCAR mount storage.
-        
+
         Args:
             local_path: Path to local file
             remote_filename: Optional remote filename (default: use local filename)
-            
+
         Returns:
             Remote path in mount storage
         """
         if not os.path.exists(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
-            
+
         if remote_filename is None:
             remote_filename = os.path.basename(local_path)
-            
+
         # Remove leading slash and 'mnt' from mount_path to get storage path
         mount_parts = self.mount_path.strip('/').split('/')
         if mount_parts[0] == 'mnt':
             mount_parts = mount_parts[1:]
         storage_path = '/'.join(mount_parts)
-        
+
         log.info("Uploading %s to %s/%s", local_path, storage_path, remote_filename)
-        
+
         storage_service = self.get_storage_service()
         # upload_file expects: provider, local_file_path, remote_directory_path
         # It automatically uses the original filename
         storage_service.upload_file("minio.default", local_path, storage_path)
-        
+
         return f"{self.mount_path}/{remote_filename}"
-        
+
     def upload_workflow_files(self, workflow_path, input_path, additional_files=None):
         """
         Upload workflow, input file, and any additional files to mount storage.
-        
+
         Args:
             workflow_path: Path to CWL workflow file
             input_path: Path to input YAML/JSON file  
             additional_files: Optional list of additional files to upload
-            
+
         Returns:
             Dict with remote paths for uploaded files
         """
         uploaded_files = {}
-        
+
         # Upload workflow file
         uploaded_files['workflow'] = self.upload_file_to_mount(workflow_path)
-        
+
         # Upload input file
         uploaded_files['input'] = self.upload_file_to_mount(input_path)
-        
+
         # Upload additional files if provided
         if additional_files:
             uploaded_files['additional'] = []
@@ -182,6 +167,21 @@ class OSCARLocalRunner:
                 
         return uploaded_files
         
+    def _convert_endpoint_for_script(self, endpoint):
+        """
+        Convert localhost endpoints to internal Kubernetes service endpoints for use in generated scripts.
+        
+        Args:
+            endpoint: Original endpoint URL
+            
+        Returns:
+            Converted endpoint for use inside OSCAR cluster
+        """
+        if 'localhost' in endpoint or '127.0.0.1' in endpoint:
+            # * Convert localhost to internal Kubernetes service endpoint (always HTTP)
+            return 'http://oscar.oscar.svc.cluster.local:8080'
+        return endpoint
+
     def create_run_script(self, workflow_remote_path, input_remote_path, additional_args=None):
         """
         Create a run script for executing the workflow on OSCAR.
@@ -199,7 +199,11 @@ class OSCARLocalRunner:
         
         # Add cluster configurations
         for cluster in self.clusters:
-            script_content += f"  --cluster-endpoint {cluster['endpoint']} \\\n"
+            # * Convert localhost endpoints to internal Kubernetes service endpoints
+            script_endpoint = self._convert_endpoint_for_script(cluster['endpoint'])
+            if script_endpoint != cluster['endpoint']:
+                log.info("Converting endpoint for script: %s -> %s", cluster['endpoint'], script_endpoint)
+            script_content += f"  --cluster-endpoint {script_endpoint} \\\n"
             if cluster.get('token'):
                 script_content += f"  --cluster-token {cluster['token']} \\\n"
             else:
@@ -506,6 +510,162 @@ class OSCARLocalRunner:
             
         return output_dir
         
+    def create_cwl_oscar_service(self, service_name="cwl-oscar"):
+        """
+        Create a cwl-oscar service on the OSCAR cluster.
+        
+        Args:
+            service_name: Name of the service to create
+            
+        Returns:
+            True if service was created successfully, False otherwise
+        """
+        log.info("Creating cwl-oscar service: %s", service_name)
+        
+        try:
+            client = self.get_client()
+            
+            # Check if service already exists
+            services_response = client.list_services()
+            if services_response.status_code == 200:
+                existing_services = json.loads(services_response.text)
+                for service in existing_services:
+                    if service.get('name') == service_name:
+                        log.info("Service '%s' already exists on cluster", service_name)
+                        return True
+            
+            # Create service definition based on cwl-oscar.yaml template
+            service_def = self._create_cwl_oscar_service_definition(service_name)
+            
+            # Create the service
+            log.info("Creating service '%s' on OSCAR cluster", service_name)
+            response = client.create_service(service_def)
+            
+            if response.status_code in [200, 201]:
+                log.info("✅ Service '%s' created successfully", service_name)
+                return True
+            else:
+                log.error("❌ Failed to create service '%s': HTTP %d - %s", 
+                         service_name, response.status_code, response.text)
+                return False
+                
+        except Exception as e:
+            log.error("❌ Error creating service '%s': %s", service_name, e)
+            return False
+    
+    def _create_cwl_oscar_service_definition(self, service_name):
+        """
+        Create service definition for cwl-oscar service based on the FDL template.
+        
+        Args:
+            service_name: Name of the service
+            
+        Returns:
+            Service definition dictionary
+        """
+        # * Script template based on fdl-orchestrator/script.sh
+        script_template = '''#!/bin/bash
+
+# Debug: Show environment variables
+echo "=== Environment Variables ==="
+echo "INPUT_FILE_PATH: $INPUT_FILE_PATH"
+echo "TMP_OUTPUT_DIR: $TMP_OUTPUT_DIR"
+echo "MOUNT_PATH: $MOUNT_PATH"
+echo "=============================="
+
+# Sleep for 5 seconds
+sleep 5
+
+FILE_NAME=$(basename "$INPUT_FILE_PATH")
+
+# Check if required environment variables are set
+if [ -z "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: INPUT_FILE_PATH environment variable not set"
+    exit 1
+fi
+
+if [ -z "$MOUNT_PATH" ]; then
+    echo "ERROR: MOUNT_PATH environment variable not set"
+    exit 1
+fi
+
+# Check if the mount path is available
+echo "[script.sh] Checking if the mount path is available"
+ls -lah /mnt
+
+# Check if the input command script exists
+if [ ! -f "$INPUT_FILE_PATH" ]; then
+    echo "ERROR: Command script not found at $INPUT_FILE_PATH"
+    exit 1
+fi
+
+echo "SCRIPT: Executing command script: $INPUT_FILE_PATH"
+
+# Execute the command script with bash
+# The command script will handle its own working directory and environment setup
+# Redirect stdout to out.log and stderr to err.log
+bash "$INPUT_FILE_PATH" 1> "$TMP_OUTPUT_DIR/$FILE_NAME.out.log" # 2> "$TMP_OUTPUT_DIR/$FILE_NAME.err.log"
+exit_code=$?
+
+echo "SCRIPT: Command completed with exit code: $exit_code"
+
+# Create output file in TMP_OUTPUT_DIR for OSCAR to detect completion
+if [ -n "$TMP_OUTPUT_DIR" ]; then
+    OUTPUT_FILE="$TMP_OUTPUT_DIR/$FILE_NAME.exit_code"
+    echo "$exit_code" > "$OUTPUT_FILE"
+    echo "SCRIPT: Exit code written to: $OUTPUT_FILE"
+fi
+
+echo "Script completed."
+exit $exit_code
+'''
+        
+        # * Service definition based on cwl-oscar.yaml template
+        service_def = {
+            'name': service_name,
+            'memory': '500Mi',
+            'cpu': '0.5',
+            'image': 'robertbio/cwl-oscar:latest',
+            'script': script_template,
+            'environment': {
+                'variables': {
+                    'MOUNT_PATH': self.mount_path
+                }
+            },
+            'input': [{
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/in'
+            }],
+            'output': [{
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/out'
+            }],
+            'mount': {
+                'storage_provider': 'minio.default',
+                'path': f'{service_name}/mount'
+            }
+        }
+        
+        # Add shared MinIO configuration if available
+        if self.shared_minio_config:
+            service_def["storage_providers"] = {
+                "minio": {
+                    "shared": {
+                        "endpoint": self.shared_minio_config["endpoint"],
+                        "verify": self.shared_minio_config.get("verify_ssl", True),
+                        "access_key": self.shared_minio_config["access_key"],
+                        "secret_key": self.shared_minio_config["secret_key"],
+                        "region": self.shared_minio_config.get("region", "us-east-1")
+                    }
+                }
+            }
+            
+            # Update mount to use shared MinIO
+            service_def["mount"]["storage_provider"] = "minio.shared"
+        
+        log.debug("Created service definition: %s", json.dumps(service_def, indent=2))
+        return service_def
+        
     def run_workflow(self, workflow_path, input_path, additional_files=None, 
                     additional_args=None, output_dir="./results", timeout_seconds=600):
         """
@@ -571,9 +731,13 @@ def main():
     
     parser = argparse.ArgumentParser(description='Run local CWL workflows on OSCAR')
     
-    # Positional arguments
-    parser.add_argument('workflow', help='Path to CWL workflow file')
-    parser.add_argument('input', help='Path to input YAML/JSON file')
+    # Positional arguments (optional when using --init)
+    parser.add_argument('workflow', nargs='?', help='Path to CWL workflow file')
+    parser.add_argument('input', nargs='?', help='Path to input YAML/JSON file')
+    
+    # Service initialization
+    parser.add_argument('--init', '--create', action='store_true', 
+                        help='Initialize/create cwl-oscar service on OSCAR cluster')
     
     # Multi-cluster support
     parser.add_argument("--cluster-endpoint", type=str, action='append',
@@ -603,7 +767,7 @@ def main():
     
     # Execution configuration
     parser.add_argument('--mount-path', default='/mnt/cwl-oscar/mount', help='Mount path for shared data')
-    parser.add_argument('--service-name', default='cwl-oscar', help='CWL-OSCAR service name')
+    parser.add_argument('--service-name', default='cwl-oscar', help='CWL-OSCAR service name (used for both execution and initialization)')
     parser.add_argument('--output-dir', default='./results', help='Output directory')
     parser.add_argument('--timeout', type=int, default=600, help='Timeout in seconds')
     parser.add_argument('--additional-files', nargs='*', help='Additional files to upload')
@@ -696,10 +860,41 @@ def main():
     elif args.cluster_endpoint:
         print("Single cluster mode - using default cluster MinIO bucket")
     
-    # Require cluster configuration
+    # Handle default cluster configuration
     if not clusters:
-        print("Error: --cluster-endpoint is required (at least one cluster must be specified)")
-        return 1
+        # * Default to localhost when no cluster endpoint is provided
+        print("No cluster endpoint specified, using default localhost configuration")
+        
+        # For localhost, we still need authentication - check if provided via other args
+        if not args.cluster_token and not args.cluster_username:
+            print("Error: When using default localhost configuration, you must provide either:")
+            print("  --cluster-token YOUR_TOKEN")
+            print("  or --cluster-username YOUR_USERNAME --cluster-password YOUR_PASSWORD")
+            return 1
+        
+        if args.cluster_username and not args.cluster_password:
+            print("Error: --cluster-password is required when using --cluster-username")
+            return 1
+            
+        clusters = [{
+            'endpoint': 'http://localhost',
+            'token': args.cluster_token[0] if args.cluster_token else None,
+            'username': args.cluster_username[0] if args.cluster_username else None,
+            'password': args.cluster_password[0] if args.cluster_password else None,
+            'ssl': not (args.cluster_disable_ssl and args.cluster_disable_ssl[0]),
+            'steps': []
+        }]
+    
+    # Validate arguments based on mode
+    if args.init:
+        # Initialization mode - workflow and input are optional
+        log.info("Running in initialization mode")
+    else:
+        # Normal execution mode - workflow and input are required
+        if not args.workflow or not args.input:
+            print("Error: workflow and input arguments are required for normal execution")
+            print("Use --init to create a service without running a workflow")
+            return 1
     
     # Set up logging
     if args.quiet:
@@ -734,6 +929,20 @@ def main():
         cwl_oscar_service=args.service_name,
         shared_minio_config=shared_minio_config
     )
+    
+    # Handle initialization mode
+    if args.init:
+        print(f"🚀 Initializing cwl-oscar service: {args.service_name}")
+        success = runner.create_cwl_oscar_service(args.service_name)
+        
+        if success:
+            print(f"✅ Service '{args.service_name}' initialized successfully")
+            print(f"🔗 Cluster: {runner.oscar_endpoint}")
+            print(f"📁 Mount path: {args.mount_path}")
+            return 0
+        else:
+            print(f"❌ Failed to initialize service '{args.service_name}'")
+            return 1
     
     # Run workflow
     success, results_dir = runner.run_workflow(

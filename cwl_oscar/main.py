@@ -1,17 +1,3 @@
-# Copyright 2025 Universitat Politècnica de València and contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Main entrypoint for cwl-oscar."""
 from __future__ import absolute_import, print_function, unicode_literals
 
@@ -24,8 +10,8 @@ import logging
 from typing import MutableMapping, MutableSequence
 from typing_extensions import Text
 
-import pkg_resources
 from typing import Any, Dict, Tuple, Optional
+from importlib.metadata import version, PackageNotFoundError
 import cwltool.main
 from cwltool.context import LoadingContext, RuntimeContext
 from cwltool.executors import (MultithreadedJobExecutor, SingleJobExecutor,
@@ -43,15 +29,14 @@ console = logging.StreamHandler(sys.stderr)
 log.addHandler(console)
 
 DEFAULT_TMP_PREFIX = "tmp"
-DEFAULT_MOUNT_PATH = "/mnt/cwl2o-data/mount"
+DEFAULT_MOUNT_PATH = "/mnt/cwl-oscar/mount"
 
 
 def versionstring():
     """Determine our version."""
-    pkg = pkg_resources.require("cwltool")
-    if pkg:
-        cwltool_ver = pkg[0].version
-    else:
+    try:
+        cwltool_ver = version("cwltool")
+    except PackageNotFoundError:
         cwltool_ver = "unknown"
     
     version_info = get_version_info()
