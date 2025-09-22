@@ -167,6 +167,21 @@ class OSCARLocalRunner:
                 
         return uploaded_files
         
+    def _convert_endpoint_for_script(self, endpoint):
+        """
+        Convert localhost endpoints to internal Kubernetes service endpoints for use in generated scripts.
+        
+        Args:
+            endpoint: Original endpoint URL
+            
+        Returns:
+            Converted endpoint for use inside OSCAR cluster
+        """
+        if 'localhost' in endpoint or '127.0.0.1' in endpoint:
+            # * Convert localhost to internal Kubernetes service endpoint (always HTTP)
+            return 'http://oscar.oscar.svc.cluster.local:8080'
+        return endpoint
+
     def create_run_script(self, workflow_remote_path, input_remote_path, additional_args=None):
         """
         Create a run script for executing the workflow on OSCAR.
@@ -184,7 +199,11 @@ class OSCARLocalRunner:
         
         # Add cluster configurations
         for cluster in self.clusters:
-            script_content += f"  --cluster-endpoint {cluster['endpoint']} \\\n"
+            # * Convert localhost endpoints to internal Kubernetes service endpoints
+            script_endpoint = self._convert_endpoint_for_script(cluster['endpoint'])
+            if script_endpoint != cluster['endpoint']:
+                log.info("Converting endpoint for script: %s -> %s", cluster['endpoint'], script_endpoint)
+            script_content += f"  --cluster-endpoint {script_endpoint} \\\n"
             if cluster.get('token'):
                 script_content += f"  --cluster-token {cluster['token']} \\\n"
             else:
@@ -841,10 +860,30 @@ def main():
     elif args.cluster_endpoint:
         print("Single cluster mode - using default cluster MinIO bucket")
     
-    # Require cluster configuration
+    # Handle default cluster configuration
     if not clusters:
-        print("Error: --cluster-endpoint is required (at least one cluster must be specified)")
-        return 1
+        # * Default to localhost when no cluster endpoint is provided
+        print("No cluster endpoint specified, using default localhost configuration")
+        
+        # For localhost, we still need authentication - check if provided via other args
+        if not args.cluster_token and not args.cluster_username:
+            print("Error: When using default localhost configuration, you must provide either:")
+            print("  --cluster-token YOUR_TOKEN")
+            print("  or --cluster-username YOUR_USERNAME --cluster-password YOUR_PASSWORD")
+            return 1
+        
+        if args.cluster_username and not args.cluster_password:
+            print("Error: --cluster-password is required when using --cluster-username")
+            return 1
+            
+        clusters = [{
+            'endpoint': 'http://localhost',
+            'token': args.cluster_token[0] if args.cluster_token else None,
+            'username': args.cluster_username[0] if args.cluster_username else None,
+            'password': args.cluster_password[0] if args.cluster_password else None,
+            'ssl': not (args.cluster_disable_ssl and args.cluster_disable_ssl[0]),
+            'steps': []
+        }]
     
     # Validate arguments based on mode
     if args.init:

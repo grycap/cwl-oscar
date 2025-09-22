@@ -14,9 +14,16 @@ Before running workflows, you need to set up the cwl-oscar orchestrator service 
 
 ### Initialize the Orchestrator Service
 
+**Remote OSCAR cluster:**
 ```bash
 cwl-oscar-cli --init \
   --cluster-endpoint https://oscar.example.com \
+  --cluster-token your-oidc-token
+```
+
+**Local OSCAR cluster (default localhost):**
+```bash
+cwl-oscar-cli --init \
   --cluster-token your-oidc-token
 ```
 
@@ -32,6 +39,19 @@ By default the orchestrator service is configured with:
 
 You should see your service (default: `cwl-oscar`) in the oscar services page.
 
+### Local vs Remote OSCAR Clusters
+
+**Local OSCAR cluster behavior:**
+- When no `--cluster-endpoint` is specified, defaults to `http://localhost`
+- Automatically converts localhost endpoints to `http://oscar.oscar.svc.cluster.local:8080` in generated scripts (always HTTP)
+- This allows the cwl-oscar service running inside Kubernetes to connect to the OSCAR API
+- Authentication parameters (`--cluster-token` or `--cluster-username`/`--cluster-password`) are still required
+
+**Remote OSCAR cluster behavior:**
+- Requires explicit `--cluster-endpoint` specification
+- Uses the provided endpoint directly in generated scripts
+- Suitable for connecting to external OSCAR clusters
+
 For multi-cluster workflows you only need the orchestrator on one of the clusters.
 
 ## What cwl-oscar-cli Does
@@ -45,11 +65,17 @@ For multi-cluster workflows you only need the orchestrator on one of the cluster
 
 ### Single Cluster
 
-Run a cwl workflow that you have locally:
-
+**Remote OSCAR cluster:**
 ```bash
 cwl-oscar-cli \
   --cluster-endpoint https://oscar.example.com \
+  --cluster-token your-oidc-token \
+  workflow.cwl input.json
+```
+
+**Local OSCAR cluster (default localhost):**
+```bash
+cwl-oscar-cli \
   --cluster-token your-oidc-token \
   workflow.cwl input.json
 ```
