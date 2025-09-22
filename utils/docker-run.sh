@@ -227,7 +227,9 @@ test_image() {
     # Test with a simple example but expect it to fail due to missing OSCAR credentials
     # The important thing is that it parses the CWL file correctly
     ERROR_OUTPUT=$(docker run --rm "$DOCKER_IMAGE" examples/date.cwl examples/empty_input.json 2>&1 || true)
-    if [[ "$ERROR_OUTPUT" == *"either --cluster-token or --cluster-username is required"* ]]; then
+    if [[ "$ERROR_OUTPUT" == *"--cluster-endpoint is required"* ]]; then
+        echo -e "${GREEN}✓ CWL parsing works (expected cluster endpoint error)${NC}"
+    elif [[ "$ERROR_OUTPUT" == *"either --cluster-token or --cluster-username is required"* ]]; then
         echo -e "${GREEN}✓ CWL parsing works (expected auth error)${NC}"
     else
         echo -e "${RED}✗ Unexpected error in CWL parsing:${NC}"

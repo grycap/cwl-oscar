@@ -1,0 +1,134 @@
+# * GitHub Action to build and push cwl-oscar Docker image to Docker Hub
+# * This workflow uses the existing utils/docker-run.sh script with build-push-multi command
+# * Supports multi-platform builds (linux/amd64, linux/arm64)
+
+name: Build and Push Docker Image
+
+on:
+  # * Manual trigger with optional registry override
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: 'Docker registry (default: robertbio)'
+        required: false
+        default: 'robertbio'
+        type: string
+      push_to_registry:
+        description: 'Push to registry after build'
+        required: false
+        default: true
+        type: boolean
+  
+  # * Automatic trigger on releases
+  release:
+    types: [published]
+  
+  # * Automatic trigger on main branch pushes (for development builds)
+  push:
+    branches:
+      - main
+    paths:
+      - 'cwl_oscar/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'utils/docker-run.sh'
+
+env:
+  # * Default registry - can be overridden by workflow input
+  DEFAULT_REGISTRY: robertbio
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # * Fetch sufficient history for git revision info
+          fetch-depth: 50
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # * Enable multi-platform builds
+          platforms: linux/amd64,linux/arm64
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event.inputs.push_to_registry != 'false' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Determine registry and build parameters
+        id: build-params
+        run: |
+          # * Determine which registry to use
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && [[ -n "${{ github.event.inputs.registry }}" ]]; then
+            REGISTRY="${{ github.event.inputs.registry }}"
+          else
+            REGISTRY="${{ env.DEFAULT_REGISTRY }}"
+          fi
+          
+          # * Determine if we should push
+          SHOULD_PUSH="true"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && [[ "${{ github.event.inputs.push_to_registry }}" == "false" ]]; then
+            SHOULD_PUSH="false"
+          fi
+          
+          echo "registry=${REGISTRY}" >> $GITHUB_OUTPUT
+          echo "should_push=${SHOULD_PUSH}" >> $GITHUB_OUTPUT
+          echo "Using registry: ${REGISTRY}"
+          echo "Will push to registry: ${SHOULD_PUSH}"
+
+      - name: Make docker-run.sh executable
+        run: chmod +x utils/docker-run.sh
+
+      - name: Build Docker image (build-only)
+        if: steps.build-params.outputs.should_push == 'false'
+        run: |
+          # * Run from project root so paths in docker-run.sh work correctly
+          ./utils/docker-run.sh --registry ${{ steps.build-params.outputs.registry }} build-multi
+
+      - name: Build and push Docker image
+        if: steps.build-params.outputs.should_push == 'true'
+        run: |
+          # * Run from project root so paths in docker-run.sh work correctly
+          ./utils/docker-run.sh --registry ${{ steps.build-params.outputs.registry }} build-push-multi
+
+      - name: Test Docker image
+        run: |
+          # * Run from project root so paths in docker-run.sh work correctly
+          ./utils/docker-run.sh --registry ${{ steps.build-params.outputs.registry }} test
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          echo "## Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry:** ${{ steps.build-params.outputs.registry }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pushed to registry:** ${{ steps.build-params.outputs.should_push }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ steps.build-params.outputs.should_push }}" == "true" ]]; then
+            echo "- **Image:** ${{ steps.build-params.outputs.registry }}/cwl-oscar:latest" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Pull the image:" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ${{ steps.build-params.outputs.registry }}/cwl-oscar:latest" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Security scan (optional)
+        if: steps.build-params.outputs.should_push == 'true'
+        continue-on-error: true
+        run: |
+          # * Run security check if script exists
+          if [[ -f "utils/docker-security-check.sh" ]]; then
+            chmod +x utils/docker-security-check.sh
+            ./utils/docker-security-check.sh || echo "Security check completed with warnings (non-blocking)"
+          else
+            echo "Security check script not found, skipping..."
+          fi
