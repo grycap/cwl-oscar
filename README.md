@@ -46,6 +46,16 @@ cwl-oscar-cli --workflow hello.cwl \
 > cwl-oscar-cli --cluster-username YOUR_USERNAME --cluster-password YOUR_PASSWORD hello.cwl input.json
 > ```
 
+> **⚙️ MinIO Configuration for Local Clusters:** When working with local OSCAR clusters, you may need to configure MinIO access:
+> 1. **Port forwarding:** Set up port forwarding to access MinIO service
+> ```bash
+> kubectl port-forward -n minio service/minio 9000:9000
+> ```
+> 2. **Add to /etc/hosts:** Add MinIO hostname to your local hosts file
+> ```bash
+> echo "127.0.0.1 minio.minio" | sudo tee -a /etc/hosts
+> ```
+
 ## What is CWL-OSCAR?
 
 CWL-OSCAR is a workflow executor that bridges the gap between:
