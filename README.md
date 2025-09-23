@@ -214,3 +214,9 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 - **Issues**: [GitHub Issues](https://github.com/grycap/cwl-oscar/issues)
 - **OSCAR Community**: [OSCAR Documentation](https://docs.oscar.grycap.net/)
+
+
+## Software Quality Badge
+[![SQAaaS badge](https://github.com/EOSC-synergy/SQAaaS/raw/master/badges/badges_150x116/badge_software_bronze.png)](https://api.eu.badgr.io/public/assertions/lUR0b7KbQOiK9twsT5h9oA "SQAaaS bronze badge achieved")
+
+This software has received a bronze badge according to the [Software Quality Baseline criteria](https://www.eosc-synergy.eu/for-developers/) defined by the [EOSC-Synergy](https://www.eosc-synergy.eu) project.
